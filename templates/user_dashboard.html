@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дашборд игрока | CyberBooking</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <style>
+        body { background: #0a0a0a; color: #fff; font-family: 'Inter', sans-serif; }
+        
+        /* Навигация */
+        .navbar { background: rgba(22, 22, 22, 0.8); backdrop-filter: blur(10px); border-bottom: 1px solid #333; }
+        .nav-link { color: #888 !important; transition: 0.3s; }
+        .nav-link:hover { color: #00d2ff !important; }
+
+        /* Карточка клуба */
+        .club-card { 
+            background: #161616; 
+            border: 1px solid #333; 
+            border-radius: 20px; 
+            overflow: hidden; 
+            transition: 0.4s; 
+            height: 100%;
+            position: relative;
+        }
+        .club-card:hover { 
+            transform: translateY(-10px); 
+            border-color: #00d2ff; 
+            box-shadow: 0 10px 30px rgba(0, 210, 255, 0.2); 
+        }
+        
+        .club-image {
+            height: 180px;
+            background: linear-gradient(45deg, #1a1a2e, #16213e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .club-image i { font-size: 4rem; color: rgba(255,255,255,0.1); }
+        
+        .status-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0, 210, 255, 0.2);
+            color: #00d2ff;
+            padding: 5px 12px;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(0, 210, 255, 0.3);
+        }
+
+        .club-body { padding: 25px; }
+        .club-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 5px; }
+        .club-address { color: #888; font-size: 0.9rem; margin-bottom: 20px; }
+        
+        .btn-book {
+            background: #00d2ff;
+            color: #000;
+            border: none;
+            font-weight: 700;
+            border-radius: 12px;
+            padding: 12px;
+            width: 100%;
+            transition: 0.3s;
+        }
+        .btn-book:hover {
+            background: #00b8e6;
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
+        }
+
+        .welcome-text { margin-bottom: 40px; }
+        .welcome-text h2 { font-weight: 800; letter-spacing: -1px; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/user/dashboard">
+                <span class="text-info">CYBER</span>BOOKING
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-secondary small d-none d-md-block">Привет, Игрок!</span>
+                <a href="/login" class="btn btn-outline-danger btn-sm rounded-pill">Выйти</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-5">
+        <div class="welcome-text">
+            <h2>Доступные арены</h2>
+            <p class="text-secondary">Выбери клуб, чтобы забронировать мощное железо</p>
+        </div>
+
+        <div class="row g-4">
+            {% if clubs %}
+                {% for club in clubs %}
+                <div class="col-md-6 col-lg-4">
+                    <div class="club-card">
+                        <div class="club-image">
+                            <i class="bi bi-controller"></i>
+                            <span class="status-badge">Online</span>
+                        </div>
+                        <div class="club-body">
+                            <div class="club-title">{{ club.name }}</div>
+                            <div class="club-address">
+                                <i class="bi bi-geo-alt"></i> {{ club.address }}
+                            </div>
+                            
+                            <div class="d-flex gap-2 mb-4">
+                                <span class="badge bg-dark border border-secondary text-secondary">24/7</span>
+                                <span class="badge bg-dark border border-secondary text-secondary">VIP Rooms</span>
+                                <span class="badge bg-dark border border-secondary text-secondary">PS5</span>
+                            </div>
+
+                            <a href="/club/{{ club.id }}" class="btn btn-book text-decoration-none d-block text-center">
+                                ВЫБРАТЬ МЕСТО
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-search" style="font-size: 3rem; color: #333;"></i>
+                    <h4 class="mt-3 text-secondary">Клубы еще не добавлены</h4>
+                    <p class="text-muted">Администратор скоро создаст новые игровые зоны.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+</body>
+</html>

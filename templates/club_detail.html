@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ club.name }} | CyberBooking</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <style>
+        body { background: #0a0a0a; color: #fff; font-family: 'Inter', sans-serif; }
+        .info-card { background: #161616; border-radius: 20px; border: 1px solid #333; padding: 25px; margin-bottom: 25px; }
+        .pc-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); 
+            gap: 15px; background: #111; padding: 20px; border-radius: 15px;
+        }
+        .pc-box {
+            aspect-ratio: 1/1; background: #222; border: 2px solid #444; border-radius: 8px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; transition: 0.2s;
+        }
+        .pc-box.free:hover { border-color: #00d2ff; box-shadow: 0 0 15px rgba(0,210,255,0.4); }
+        .pc-box.selected { border-color: #00d2ff; background: rgba(0,210,255,0.2); color: #00d2ff; }
+        .pc-box.busy { background: #000; border-color: #f00; opacity: 0.4; cursor: not-allowed; color: #f00; }
+        
+        /* Добавленные стили для разделения категорий */
+        .pc-box.VIP { border-color: #ffc107; color: #ffc107; }
+        .pc-box.VIP:hover { box-shadow: 0 0 15px rgba(255,193,7,0.4); }
+        
+        .product-card { background: #1a1a1a; border: 1px solid #333; border-radius: 15px; padding: 15px; text-align: center; height: 100%; transition: 0.3s; }
+        .product-card:hover { border-color: #00d2ff; }
+        .product-img { width: 100%; height: 120px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <a href="/user/dashboard" class="text-info text-decoration-none mb-4 d-inline-block">← Назад</a>
+        <h1 class="display-4 fw-bold mb-4">{{ club.name }}</h1>
+
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="info-card">
+                    <h4 class="mb-4 fw-bold text-warning"><i class="bi bi-gem"></i> VIP ZONE</h4>
+                    <div class="pc-grid mb-5">
+                        {% for pc in computers if pc.category == 'VIP' %}
+                        <div class="pc-box {{ pc.status }} VIP" id="pc-{{ pc.id }}" onclick="selectSeat({{ pc.id }}, '{{ pc.number }}', '{{ pc.status }}', 'VIP')">
+                            <i class="bi bi-display mb-1"></i>
+                            <span class="fw-bold">{{ pc.number }}</span>
+                            <small style="font-size: 0.6rem;">{{ pc.category }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <h4 class="mb-4 fw-bold text-info"><i class="bi bi-pc-display"></i> STANDARD ZONE</h4>
+                    <div class="pc-grid">
+                        {% for pc in computers if pc.category != 'VIP' %}
+                        <div class="pc-box {{ pc.status }}" id="pc-{{ pc.id }}" onclick="selectSeat({{ pc.id }}, '{{ pc.number }}', '{{ pc.status }}', 'Standard')">
+                            <i class="bi bi-display mb-1"></i>
+                            <span class="fw-bold">{{ pc.number }}</span>
+                            <small style="font-size: 0.6rem;">{{ pc.category }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h4 class="mb-4 fw-bold">КИБЕР МАРКЕТ</h4>
+                    <div class="row g-3">
+                        {% for prod in products %}
+                        <div class="col-md-4">
+                            <div class="product-card">
+                                {% if prod.image_url %}
+                                <img src="{{ prod.image_url }}" class="product-img" alt="{{ prod.name }}">
+                                {% else %}
+                                <div class="product-img d-flex align-items-center justify-content-center bg-dark">
+                                    <i class="bi bi-cup-hot fs-1 text-secondary"></i>
+                                </div>
+                                {% endif %}
+                                <h6>{{ prod.name }}</h6>
+                                <div class="text-info fw-bold mb-2">{{ prod.price }} ₸</div>
+                                <button onclick="buyProduct({{ prod.id }}, '{{ prod.name }}')" class="btn btn-sm btn-outline-success w-100">КУПИТЬ</button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="info-card sticky-top" style="top: 20px;">
+                    <h4 class="mb-4">Заказ</h4>
+                    <div id="booking-info">
+                        <p class="text-secondary">Выберите компьютер для бронирования</p>
+                    </div>
+                    <button class="btn btn-info w-100 py-3 fw-bold mt-2" disabled id="book-btn">ЗАБРОНИРОВАТЬ</button>
+                    
+                    <hr class="my-4 border-secondary">
+                    
+                    <h5>Игры в клубе</h5>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for game in club.games %}
+                        <span class="badge bg-secondary">{{ game.name }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
+
+    <script>
+        let selectedId = null;
+        
+        function selectSeat(id, num, status, category) {
+            if (status === 'busy') return;
+            if (selectedId) document.getElementById('pc-'+selectedId).classList.remove('selected');
+            selectedId = id;
+            document.getElementById('pc-'+id).classList.add('selected');
+            
+            const colorClass = category === 'VIP' ? 'text-warning' : 'text-info';
+            document.getElementById('booking-info').innerHTML = `
+                <div class="p-3 border rounded border-secondary">
+                    <h5 class="${colorClass}">Место №${num}</h5>
+                    <p class="mb-0 small">Категория: ${category}</p>
+                </div>
+            `;
+            
+            const btn = document.getElementById('book-btn');
+            btn.disabled = false;
+            btn.onclick = async () => {
+                const res = await fetch(`/book_seat/${id}`, {method:'POST'});
+                if(res.ok) { 
+                    alert('Бронирование подтверждено!'); 
+                    location.reload(); 
+                }
+            };
+        }
+
+        async function buyProduct(id, name) {
+            if(confirm(`Купить ${name}?`)) {
+                const res = await fetch(`/buy_product/${id}`, {method:'POST'});
+                if(res.ok) {
+                    alert('Заказ отправлен! Администратор принесет товар к вашему ПК.');
+                } else {
+                    alert('Ошибка при оформлении заказа.');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
