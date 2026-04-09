@@ -1,50 +1,52 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from schemas import GameResponse, GameCreate, MessageResponse
 import models
 
 router = APIRouter(prefix="/games", tags=["games"])
 
-def get_db():
-    db = models.SessionLocal()
-    try:
+async def get_db():
+    async with models.SessionLocal() as db:
         yield db
-    finally:
-        db.close()
 
 @router.get("", response_model=list[GameResponse])
-async def get_games(db: Session = Depends(get_db)):
+async def get_games(db: AsyncSession = Depends(get_db)):
     """Получить список всех игр"""
-    games = db.query(models.Game).all()
+    res = await db.execute(select(models.Game))
+    games = res.scalars().all()
     return [GameResponse(id=g.id, name=g.name) for g in games]
 
 @router.get("/{game_id}", response_model=GameResponse)
-async def get_game(game_id: int, db: Session = Depends(get_db)):
+async def get_game(game_id: int, db: AsyncSession = Depends(get_db)):
     """Получить игру по ID"""
-    game = db.query(models.Game).get(game_id)
+    res = await db.execute(select(models.Game).filter(models.Game.id == game_id))
+    game = res.scalars().first()
     if not game:
         raise HTTPException(status_code=404, detail="Игра не найдена")
     return GameResponse(id=game.id, name=game.name)
 
 @router.post("", response_model=GameResponse)
-async def create_game(data: GameCreate, db: Session = Depends(get_db)):
+async def create_game(data: GameCreate, db: AsyncSession = Depends(get_db)):
     """Добавить новую игру"""
-    existing = db.query(models.Game).filter(models.Game.name == data.name).first()
+    res = await db.execute(select(models.Game).filter(models.Game.name == data.name))
+    existing = res.scalars().first()
     if existing:
         raise HTTPException(status_code=400, detail="Игра с таким названием уже существует")
 
     game = models.Game(name=data.name)
     db.add(game)
-    db.commit()
-    db.refresh(game)
+    await db.commit()
+    await db.refresh(game)
     return GameResponse(id=game.id, name=game.name)
 
 @router.delete("/{game_id}", response_model=MessageResponse)
-async def delete_game(game_id: int, db: Session = Depends(get_db)):
+async def delete_game(game_id: int, db: AsyncSession = Depends(get_db)):
     """Удалить игру"""
-    game = db.query(models.Game).get(game_id)
+    res = await db.execute(select(models.Game).filter(models.Game.id == game_id))
+    game = res.scalars().first()
     if not game:
         raise HTTPException(status_code=404, detail="Игра не найдена")
-    db.delete(game)
-    db.commit()
+    await db.delete(game)
+    await db.commit()
     return MessageResponse(success=True, message="Игра удалена")

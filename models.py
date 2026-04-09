@@ -2,12 +2,15 @@ import os
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, Enum
 from sqlalchemy.orm import relationship, declarative_base, sessionmaker
 import enum
-from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from config import settings
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:12345678@localhost:5432/club")
+DATABASE_URL = settings.database_url
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_async_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 Base = declarative_base()
 
 # Таблица связи М:М для клубов и игр
@@ -23,6 +26,7 @@ class Computer(Base):
     category = Column(String) # Standard/VIP
     status = Column(String, default="free") # free/busy/reserved
     club_id = Column(Integer, ForeignKey("clubs.id"))
+    current_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     # Для карты зала (координаты на сетке)
     position_x = Column(Integer, default=0)
     position_y = Column(Integer, default=0)

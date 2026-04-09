@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from schemas import (
     ClubResponse, ClubCreate, ClubListResponse,
     GameResponse, PackageResponse, MessageResponse
@@ -8,12 +9,9 @@ import models
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
 
-def get_db():
-    db = models.SessionLocal()
-    try:
+async def get_db():
+    async with models.SessionLocal() as db:
         yield db
-    finally:
-        db.close()
 
 def club_to_response(club: models.Club) -> ClubResponse:
     """Преобразовать модель клуба в response схему"""
@@ -31,9 +29,10 @@ def club_to_response(club: models.Club) -> ClubResponse:
     )
 
 @router.get("", response_model=list[ClubListResponse])
-async def get_clubs(db: Session = Depends(get_db)):
+async def get_clubs(db: AsyncSession = Depends(get_db)):
     """Получить список всех клубов (краткая информация)"""
-    clubs = db.query(models.Club).all()
+    res = await db.execute(select(models.Club))
+    clubs = res.scalars().all()
     return [
         ClubListResponse(
             id=c.id,
@@ -44,15 +43,16 @@ async def get_clubs(db: Session = Depends(get_db)):
     ]
 
 @router.get("/{club_id}", response_model=ClubResponse)
-async def get_club(club_id: int, db: Session = Depends(get_db)):
+async def get_club(club_id: int, db: AsyncSession = Depends(get_db)):
     """Получить полную информацию о клубе по ID"""
-    club = db.query(models.Club).get(club_id)
+    res = await db.execute(select(models.Club).filter(models.Club.id == club_id))
+    club = res.scalars().first()
     if not club:
         raise HTTPException(status_code=404, detail="Клуб не найден")
     return club_to_response(club)
 
 @router.post("", response_model=ClubResponse)
-async def create_club(data: ClubCreate, db: Session = Depends(get_db)):
+async def create_club(data: ClubCreate, db: AsyncSession = Depends(get_db)):
     """Создать новый клуб"""
     new_club = models.Club(
         name=data.name,
@@ -63,12 +63,13 @@ async def create_club(data: ClubCreate, db: Session = Depends(get_db)):
 
     # Добавить игры
     for gid in data.game_ids:
-        game = db.query(models.Game).get(gid)
+        res = await db.execute(select(models.Game).filter(models.Game.id == gid))
+        game = res.scalars().first()
         if game:
             new_club.games.append(game)
 
     db.add(new_club)
-    db.flush()
+    await db.flush()
 
     # Добавить пакеты
     for pkg in data.packages:
@@ -80,14 +81,15 @@ async def create_club(data: ClubCreate, db: Session = Depends(get_db)):
         )
         db.add(new_pkg)
 
-    db.commit()
-    db.refresh(new_club)
+    await db.commit()
+    await db.refresh(new_club)
     return club_to_response(new_club)
 
 @router.put("/{club_id}", response_model=ClubResponse)
-async def update_club(club_id: int, data: ClubCreate, db: Session = Depends(get_db)):
+async def update_club(club_id: int, data: ClubCreate, db: AsyncSession = Depends(get_db)):
     """Обновить информацию о клубе"""
-    club = db.query(models.Club).get(club_id)
+    res = await db.execute(select(models.Club).filter(models.Club.id == club_id))
+    club = res.scalars().first()
     if not club:
         raise HTTPException(status_code=404, detail="Клуб не найден")
 
@@ -99,13 +101,14 @@ async def update_club(club_id: int, data: ClubCreate, db: Session = Depends(get_
     # Обновить игры
     club.games.clear()
     for gid in data.game_ids:
-        game = db.query(models.Game).get(gid)
+        res = await db.execute(select(models.Game).filter(models.Game.id == gid))
+        game = res.scalars().first()
         if game:
             club.games.append(game)
 
     # Удалить старые пакеты и добавить новые
     for pkg in club.packages:
-        db.delete(pkg)
+        await db.delete(pkg)
 
     for pkg in data.packages:
         new_pkg = models.Package(
@@ -116,16 +119,17 @@ async def update_club(club_id: int, data: ClubCreate, db: Session = Depends(get_
         )
         db.add(new_pkg)
 
-    db.commit()
-    db.refresh(club)
+    await db.commit()
+    await db.refresh(club)
     return club_to_response(club)
 
 @router.delete("/{club_id}", response_model=MessageResponse)
-async def delete_club(club_id: int, db: Session = Depends(get_db)):
+async def delete_club(club_id: int, db: AsyncSession = Depends(get_db)):
     """Удалить клуб"""
-    club = db.query(models.Club).get(club_id)
+    res = await db.execute(select(models.Club).filter(models.Club.id == club_id))
+    club = res.scalars().first()
     if not club:
         raise HTTPException(status_code=404, detail="Клуб не найден")
-    db.delete(club)
-    db.commit()
+    await db.delete(club)
+    await db.commit()
     return MessageResponse(success=True, message="Клуб удален")

@@ -84,8 +84,8 @@
                 <span class="text-info">CYBER</span>BOOKING
             </a>
             <div class="d-flex align-items-center gap-3">
-                <span class="text-secondary small d-none d-md-block">Привет, Игрок!</span>
-                <a href="/login" class="btn btn-outline-danger btn-sm rounded-pill">Выйти</a>
+                <span class="text-secondary small d-none d-md-block">Привет, {% if current_user %}{{ current_user.email }}{% else %}Игрок{% endif %}!</span>
+                <a href="/logout" class="btn btn-outline-danger btn-sm rounded-pill">Выйти</a>
             </div>
         </div>
     </nav>
