@@ -84,7 +84,10 @@
                 <span class="text-info">CYBER</span>BOOKING
             </a>
             <div class="d-flex align-items-center gap-3">
-                <span class="text-secondary small d-none d-md-block">Привет, {% if current_user %}{{ current_user.email }}{% else %}Игрок{% endif %}!</span>
+                <div class="text-end d-none d-md-block">
+                    <div class="small text-secondary">{{ current_user.email }}</div>
+                    <div class="fw-bold text-info">{{ current_user.balance }} ₸</div>
+                </div>
                 <a href="/logout" class="btn btn-outline-danger btn-sm rounded-pill">Выйти</a>
             </div>
         </div>

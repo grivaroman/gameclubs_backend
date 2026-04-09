@@ -1,6 +1,6 @@
-import os
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, Enum
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, Enum, DateTime, Boolean, Float
 from sqlalchemy.orm import relationship, declarative_base, sessionmaker
+from datetime import datetime, timezone
 import enum
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from config import settings
@@ -27,6 +27,7 @@ class Computer(Base):
     status = Column(String, default="free") # free/busy/reserved
     club_id = Column(Integer, ForeignKey("clubs.id"))
     current_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    end_time = Column(DateTime, nullable=True) # Когда сессия закончится
     # Для карты зала (координаты на сетке)
     position_x = Column(Integer, default=0)
     position_y = Column(Integer, default=0)
@@ -65,6 +66,7 @@ class Package(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     price = Column(Integer)
+    duration_minutes = Column(Integer, default=60) # Продолжительность пакета
     pc_category = Column(String)
     club_id = Column(Integer, ForeignKey('clubs.id'))
     club = relationship("Club", back_populates="packages")
@@ -78,6 +80,7 @@ class User(Base):
     phone = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="user") # "admin" или "user"
+    balance = Column(Integer, default=0) # Баланс в тенге
 
     orders = relationship("Order", back_populates="user")
 
@@ -87,7 +90,9 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     product_id = Column(Integer, ForeignKey("products.id"))
-    status = Column(String, default="pending") # pending, completed
+    computer_id = Column(Integer, ForeignKey("computers.id"), nullable=True)
+    status = Column(String, default="pending") # pending, completed, cancelled
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     # ДОБАВЬ ЭТИ ДВЕ СТРОКИ:
     user = relationship("User", back_populates="orders")

@@ -1,20 +1,30 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from datetime import datetime, timedelta
 
 import models
 from core.dependencies import templates, get_db, get_current_user
+from core.ws import manager
 
 router = APIRouter(tags=["web_user"])
 
 @router.post("/book_seat/{pc_id}")
-async def book_seat(request: Request, pc_id: int, db: AsyncSession = Depends(get_db)):
+async def book_seat(
+    request: Request, 
+    pc_id: int, 
+    package_id: int = Form(...), # Теперь нужно передать ID пакета
+    db: AsyncSession = Depends(get_db)
+):
     current_user = await get_current_user(request, db)
     if not current_user:
         return {"status": "error", "message": "Необходима авторизация"}
 
-    res = await db.execute(select(models.Computer).filter(models.Computer.id == pc_id))
+    # Блокируем запись ПК для предотвращения Race Condition
+    res = await db.execute(
+        select(models.Computer).filter(models.Computer.id == pc_id).with_for_update()
+    )
     pc = res.scalars().first()
     
     if not pc:
@@ -23,10 +33,27 @@ async def book_seat(request: Request, pc_id: int, db: AsyncSession = Depends(get
     if pc.status != "free":
         return {"status": "error", "message": "Место уже занято"}
 
+    # Получаем пакет
+    res_pkg = await db.execute(select(models.Package).filter(models.Package.id == package_id))
+    package = res_pkg.scalars().first()
+    if not package:
+        return {"status": "error", "message": "Тариф не найден"}
+
+    # Проверка баланса
+    if current_user.balance < package.price:
+        return {"status": "error", "message": f"Недостаточно средств. Нужно {package.price}₸"}
+
+    # Списываем деньги и ставим время
+    current_user.balance -= package.price
     pc.status = "busy"
     pc.current_user_id = current_user.id
+    pc.end_time = datetime.utcnow() + timedelta(minutes=package.duration_minutes)
+    
     await db.commit()
-    return {"status": "success", "message": "Забронировано!"}
+    # Отправляем команду разблокировки по WebSocket
+    await manager.send_command(pc.id, {"command": "unlock", "user": current_user.email})
+    
+    return {"status": "success", "message": f"Бронирование на {package.duration_minutes} мин. успешно!"}
 
 @router.post("/free_seat/{pc_id}")
 async def free_seat(request: Request, pc_id: int, db: AsyncSession = Depends(get_db)):
@@ -45,7 +72,11 @@ async def free_seat(request: Request, pc_id: int, db: AsyncSession = Depends(get
 
     pc.status = "free"
     pc.current_user_id = None
+    pc.end_time = None
     await db.commit()
+    # Отправляем команду блокировки по WebSocket
+    await manager.send_command(pc.id, {"command": "lock"})
+    
     return {"status": "success", "message": "Место успешно освобождено!"}
 
 @router.post("/buy_product/{product_id}")
@@ -53,11 +84,20 @@ async def buy_product(request: Request, product_id: int, db: AsyncSession = Depe
     user = await get_current_user(request, db)
     if not user:
         return {"status": "error", "message": "Сначала зарегистрируйтесь или войдите"}
-        
+
+    res_prod = await db.execute(select(models.Product).filter(models.Product.id == product_id))
+    product = res_prod.scalars().first()
+    if not product:
+        return {"status": "error", "message": "Товар не найден"}
+
+    if user.balance < product.price:
+        return {"status": "error", "message": "Недостаточно средств на балансе"}
+
+    user.balance -= product.price
     new_order = models.Order(user_id=user.id, product_id=product_id, status="new")
     db.add(new_order)
     await db.commit()
-    return {"status": "success", "message": "Заказ принят, ожидайте доставку к компу!"}
+    return {"status": "success", "message": f"Заказ принят! Списано {product.price}₸"}
 
 @router.get("/user/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, db: AsyncSession = Depends(get_db)):
@@ -82,11 +122,16 @@ async def club_detail(club_id: int, request: Request, db: AsyncSession = Depends
     computers = res_comp.scalars().all()
     res_prod = await db.execute(select(models.Product).filter(models.Product.club_id == club_id))
     products = res_prod.scalars().all()
+    
+    # Загружаем пакеты (тарифы) для этого клуба
+    res_pkgs = await db.execute(select(models.Package).filter(models.Package.club_id == club_id))
+    packages = res_pkgs.scalars().all()
 
     return templates.TemplateResponse("club_detail.html", {
         "request": request, 
         "club": club, 
         "computers": computers, 
         "products": products,
+        "packages": packages,
         "current_user": current_user
     })

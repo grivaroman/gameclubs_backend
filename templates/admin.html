@@ -30,7 +30,13 @@
             <a class="nav-link active" data-bs-toggle="tab" href="#clubs">Клубы и Игры</a>
         </li>
         <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#tariffs">Тарифы</a>
+        </li>
+        <li class="nav-item">
             <a class="nav-link" data-bs-toggle="tab" href="#computers">Компьютеры</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#users">Пользователи</a>
         </li>
         <li class="nav-item">
             <a class="nav-link" data-bs-toggle="tab" href="#shop">Магазин</a>
@@ -52,6 +58,44 @@
                         <input type="text" name="address" class="form-control" placeholder="Адрес (ул. Абая 10)" required>
                     </div>
                     <button type="submit" class="btn btn-neon w-100">СОЗДАТЬ КЛУБ</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tariffs">
+            <div class="admin-card">
+                <h5 class="mb-4">Создать Пакет времени (Тариф)</h5>
+                <form action="/admin/add_package" method="POST" class="row g-3">
+                    <div class="col-md-3">
+                        <label class="small text-secondary">Клуб</label>
+                        <select name="club_id" class="form-select" required>
+                            {% for club in clubs %}
+                            <option value="{{ club.id }}">{{ club.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="small text-secondary">Название тарифа</label>
+                        <input type="text" name="name" class="form-control" placeholder="Напр: 3 часа VIP" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="small text-secondary">Цена (₸)</label>
+                        <input type="number" name="price" class="form-control" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="small text-secondary">Минуты</label>
+                        <input type="number" name="duration" class="form-control" placeholder="180" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="small text-secondary">Категория ПК</label>
+                        <select name="category" class="form-select">
+                            <option value="Standard">Standard</option>
+                            <option value="VIP">VIP</option>
+                        </select>
+                    </div>
+                    <div class="col-12 text-end">
+                        <button type="submit" class="btn btn-neon px-5">СОЗДАТЬ ТАРИФ</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -83,6 +127,40 @@
                         <button type="submit" class="btn btn-primary w-100">ДОБАВИТЬ</button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="users">
+            <div class="admin-card">
+                <h5 class="mb-4">Управление балансом пользователей</h5>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Телефон</th>
+                                <th>Баланс</th>
+                                <th class="text-end">Пополнить</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td>{{ user.email }}</td>
+                                <td>{{ user.phone or '-' }}</td>
+                                <td class="text-info fw-bold">{{ user.balance }} ₸</td>
+                                <td class="text-end">
+                                    <form action="/admin/top_up_balance" method="POST" class="d-inline-flex gap-2">
+                                        <input type="hidden" name="user_id" value="{{ user.id }}">
+                                        <input type="number" name="amount" class="form-control form-control-sm" style="width: 100px;" placeholder="+₸" required>
+                                        <button type="submit" class="btn btn-sm btn-success">ОК</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -124,25 +202,37 @@
                     <table class="table table-dark table-hover border-secondary">
                         <thead>
                             <tr>
-                                <th>ID</th>
+                                <th>Дата</th>
                                 <th>Пользователь</th>
                                 <th>Товар</th>
                                 <th>Статус</th>
+                                <th class="text-end">Действие</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for order in orders %}
                             <tr>
-                                <td>#{{ order.id }}</td>
+                                <td class="small">{{ order.created_at.strftime('%d.%m %H:%M') if order.created_at else '-' }}</td>
                                 <td>{{ order.user.email }}</td>
                                 <td>{{ order.product.name }}</td>
                                 <td>
-                                    <span class="badge badge-pending">{{ order.status }}</span>
+                                    {% if order.status == 'new' or order.status == 'pending' %}
+                                    <span class="badge bg-warning text-dark">Новый</span>
+                                    {% else %}
+                                    <span class="badge bg-success">Выполнен</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    {% if order.status == 'new' or order.status == 'pending' %}
+                                    <form action="/admin/complete_order/{{ order.id }}" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-info">Выполнить</button>
+                                    </form>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="4" class="text-center text-secondary">Заказов пока нет</td>
+                                <td colspan="5" class="text-center text-secondary">Заказов пока нет</td>
                             </tr>
                             {% endfor %}
                         </tbody>
