@@ -2,32 +2,53 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Вход - CyberBooking</title>
+    <title>Вход | CyberBooking</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
-        body { background: #0f0f0f; display: flex; align-items: center; min-height: 100vh; color: #fff; }
-        .login-card { background: #1a1a1a; border: 1px solid #333; border-radius: 20px; padding: 40px; width: 100%; max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-        .form-control { background: #252525; border: 1px solid #444; color: #fff; padding: 12px; border-radius: 10px; }
+        body { background: #0b0b0b; min-height: 100vh; color: #fff; }
+        .auth-layout { min-height: 100vh; display: grid; grid-template-columns: 1.1fr 0.9fr; }
+        .brand-pane { background: linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,.75)), url("https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1400&q=80") center/cover; padding: 56px; display: flex; flex-direction: column; justify-content: space-between; }
+        .login-pane { display: flex; align-items: center; justify-content: center; padding: 32px; }
+        .login-card { background: #171717; border: 1px solid #333; border-radius: 8px; padding: 36px; width: 100%; max-width: 430px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .form-control { background: #252525; border: 1px solid #444; color: #fff; padding: 12px; border-radius: 8px; }
         .form-control:focus { background: #2d2d2d; color: #fff; border-color: #00d2ff; box-shadow: none; }
-        .btn-primary { background: #00d2ff; border: none; padding: 12px; font-weight: bold; border-radius: 10px; color: #000; }
+        .form-control::placeholder { color: #777; }
+        .btn-primary { background: #00d2ff; border: none; padding: 12px; font-weight: bold; border-radius: 8px; color: #000; }
         .btn-primary:hover { background: #00b8e6; box-shadow: 0 0 15px #00d2ff; }
+        .link-soft { color: #0dcaf0; text-decoration: none; }
+        @media (max-width: 900px) { .auth-layout { grid-template-columns: 1fr; } .brand-pane { min-height: 280px; padding: 32px; } }
     </style>
 </head>
-<body class="container">
-    <div class="login-card mx-auto">
-        <h2 class="text-center mb-4 fw-bold">С возвращением!</h2>
-        <form action="/login" method="POST">
-            <div class="mb-3">
-                <label class="form-label text-secondary">Email</label>
-                <input type="email" name="email" class="form-control" placeholder="name@example.com" required>
+<body>
+    <div class="auth-layout">
+        <section class="brand-pane">
+            <div class="fw-bold fs-4"><span class="text-info">CYBER</span>BOOKING</div>
+            <div>
+                <h1 class="display-5 fw-bold mb-3">Карта ПК-клубов города</h1>
+                <p class="lead mb-0">Игроки находят свободные места, владельцы управляют клубами, товарами и бронированиями.</p>
             </div>
-            <div class="mb-4">
-                <label class="form-label text-secondary">Пароль</label>
-                <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+        </section>
+        <section class="login-pane">
+            <div class="login-card">
+                <h2 class="mb-2 fw-bold">Войти</h2>
+                <p class="text-secondary mb-4">Один вход для игроков и владельцев клубов.</p>
+                <form action="/login" method="POST">
+                    <div class="mb-3">
+                        <label class="form-label text-secondary">Email</label>
+                        <input type="email" name="email" class="form-control" placeholder="name@example.com" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label text-secondary">Пароль</label>
+                        <input type="password" name="password" class="form-control" placeholder="Пароль" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 mb-3">Войти</button>
+                    <div class="d-flex justify-content-between gap-3 small">
+                        <a href="/register" class="link-soft">Я игрок</a>
+                        <a href="/owner/register" class="link-soft">Добавить свой клуб</a>
+                    </div>
+                </form>
             </div>
-            <button type="submit" class="btn btn-primary w-100 mb-3">Войти в систему</button>
-            <p class="text-center small text-secondary">Ещё не с нами? <a href="/register" class="text-info text-decoration-none">Создать аккаунт</a></p>
-        </form>
+        </section>
     </div>
 </body>
 </html>

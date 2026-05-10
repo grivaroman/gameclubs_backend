@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 
 import models
@@ -9,6 +10,24 @@ from core.dependencies import templates, get_db, get_current_user
 from core.ws import manager
 
 router = APIRouter(tags=["web_user"])
+
+
+async def club_card_stats(db: AsyncSession, club_ids: list[int]):
+    stats = {}
+    for club_id in club_ids:
+        res = await db.execute(select(models.Computer).filter(models.Computer.club_id == club_id))
+        computers = res.scalars().all()
+        res_products = await db.execute(
+            select(models.Product).filter(models.Product.club_id == club_id)
+        )
+        products = res_products.scalars().all()
+        stats[club_id] = {
+            "total": len(computers),
+            "free": len([pc for pc in computers if pc.status == "free"]),
+            "busy": len([pc for pc in computers if pc.status == "busy"]),
+            "products": len(products),
+        }
+    return stats
 
 @router.post("/book_seat/{pc_id}")
 async def book_seat(
@@ -48,6 +67,19 @@ async def book_seat(
     pc.status = "busy"
     pc.current_user_id = current_user.id
     pc.end_time = datetime.utcnow() + timedelta(minutes=package.duration_minutes)
+    db.add(models.Booking(
+        user_id=current_user.id,
+        computer_id=pc.id,
+        status="active",
+        starts_at=datetime.utcnow(),
+        ends_at=pc.end_time,
+    ))
+    db.add(models.Notification(
+        kind="booking",
+        club_id=pc.club_id,
+        title="Новое бронирование",
+        message=f"ПК #{pc.number} забронирован на {package.duration_minutes} мин.",
+    ))
     
     await db.commit()
     # Отправляем команду разблокировки по WebSocket
@@ -96,6 +128,12 @@ async def buy_product(request: Request, product_id: int, db: AsyncSession = Depe
     user.balance -= product.price
     new_order = models.Order(user_id=user.id, product_id=product_id, status="new")
     db.add(new_order)
+    db.add(models.Notification(
+        kind="order",
+        club_id=product.club_id,
+        title="Новый заказ",
+        message=f"Заказали товар: {product.name}.",
+    ))
     await db.commit()
     return {"status": "success", "message": f"Заказ принят! Списано {product.price}₸"}
 
@@ -105,15 +143,25 @@ async def dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
 
-    res = await db.execute(select(models.Club))
+    res = await db.execute(select(models.Club).options(selectinload(models.Club.games)).order_by(models.Club.city, models.Club.name))
     clubs = res.scalars().all()
-    return templates.TemplateResponse("user_dashboard.html", {"request": request, "clubs": clubs, "current_user": current_user})
+    stats = await club_card_stats(db, [club.id for club in clubs])
+    return templates.TemplateResponse("user_dashboard.html", {
+        "request": request,
+        "clubs": clubs,
+        "stats": stats,
+        "current_user": current_user,
+    })
 
 @router.get("/club/{club_id}", response_class=HTMLResponse)
 async def club_detail(club_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     current_user = await get_current_user(request, db)
     
-    res_club = await db.execute(select(models.Club).filter(models.Club.id == club_id))
+    res_club = await db.execute(
+        select(models.Club)
+        .options(selectinload(models.Club.games))
+        .filter(models.Club.id == club_id)
+    )
     club = res_club.scalars().first()
     if not club:
         return HTMLResponse("Клуб не найден", status_code=404)

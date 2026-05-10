@@ -2,246 +2,401 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Админ-панель | CONTROL CENTER</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM админ-панель | CyberBooking</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
-        body { background: #0a0a0a; color: #fff; font-family: 'Inter', sans-serif; }
-        .admin-card { background: #161616; border: 1px solid #333; border-radius: 20px; padding: 30px; margin-bottom: 30px; }
-        .form-control, .form-select { background: #222; border: 1px solid #444; color: #fff; }
-        .form-control:focus, .form-select:focus { background: #2a2a2a; color: #fff; border-color: #00d2ff; box-shadow: none; }
-        .btn-neon { background: transparent; border: 1px solid #00d2ff; color: #00d2ff; transition: 0.3s; }
-        .btn-neon:hover { background: #00d2ff; color: #000; box-shadow: 0 0 20px #00d2ff; }
-        .nav-tabs { border-bottom: 1px solid #333; }
-        .nav-tabs .nav-link { color: #888; border: none; margin-right: 20px; padding: 10px 0; }
-        .nav-tabs .nav-link.active { color: #00d2ff; background: transparent; border-bottom: 2px solid #00d2ff; }
-        .table { color: #fff; border-color: #333; }
-        .badge-pending { background: #ffc107; color: #000; }
+        body { background: #090909; color: #f7f7f7; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .shell { max-width: 1440px; }
+        .panel { background: #151515; border: 1px solid #303030; border-radius: 8px; padding: 20px; }
+        .metric { min-height: 108px; }
+        .metric-value { font-size: 2rem; line-height: 1; font-weight: 800; }
+        .form-control, .form-select { background: #202020; border: 1px solid #444; color: #fff; }
+        .form-control:focus, .form-select:focus { background: #242424; color: #fff; border-color: #0dcaf0; box-shadow: none; }
+        .form-control::placeholder { color: #8b8b8b; }
+        .btn-neon { background: #0dcaf0; border: 1px solid #0dcaf0; color: #000; font-weight: 700; }
+        .btn-neon:hover { background: #70e6ff; border-color: #70e6ff; color: #000; }
+        .nav-tabs { border-color: #2f2f2f; }
+        .nav-tabs .nav-link { color: #a0a0a0; border: none; border-bottom: 2px solid transparent; }
+        .nav-tabs .nav-link.active { color: #0dcaf0; background: transparent; border-bottom-color: #0dcaf0; }
+        .game-box { background: #1c1c1c; border: 1px solid #333; border-radius: 8px; max-height: 190px; overflow-y: auto; padding: 14px; }
+        .table { --bs-table-bg: transparent; --bs-table-color: #fff; --bs-table-border-color: #303030; }
+        .pc-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 10px; }
+        .pc-tile { border: 1px solid #3b3b3b; border-radius: 8px; padding: 10px; min-height: 86px; background: #202020; }
+        .pc-free { border-color: #20c997; }
+        .pc-busy { border-color: #dc3545; background: #251719; }
+        .pc-reserved { border-color: #ffc107; background: #282315; }
+        .notification { border-left: 3px solid #0dcaf0; background: #1d1d1d; border-radius: 8px; padding: 12px; }
+        .chat-log { height: 340px; overflow-y: auto; background: #101010; border: 1px solid #303030; border-radius: 8px; padding: 14px; }
+        .chat-msg { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; white-space: pre-wrap; }
+        .chat-user { background: #073642; margin-left: 36px; }
+        .chat-ai { background: #222; margin-right: 36px; }
+        .chart-wrap { height: 260px; }
     </style>
 </head>
-<body class="container py-5">
-
-    <div class="d-flex justify-content-between align-items-center mb-5">
-        <h1 class="fw-bold m-0"><i class="bi bi-cpu text-info"></i> CONTROL <span class="text-info">CENTER</span></h1>
-        <a href="/logout" class="btn btn-outline-danger rounded-pill">Выйти</a>
-    </div>
-    <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
-        <li class="nav-item">
-            <a class="nav-link active" data-bs-toggle="tab" href="#clubs">Клубы и Игры</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" data-bs-toggle="tab" href="#tariffs">Тарифы</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" data-bs-toggle="tab" href="#computers">Компьютеры</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" data-bs-toggle="tab" href="#users">Пользователи</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" data-bs-toggle="tab" href="#shop">Магазин</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" data-bs-toggle="tab" href="#orders">Заказы</a>
-        </li>
-    </ul>
-
-    <div class="tab-content">
-        <div class="tab-pane fade show active" id="clubs">
-            <div class="admin-card">
-                <h5 class="mb-4">Добавить Клуб</h5>
-                <form action="/admin/add_club" method="POST">
-                    <div class="mb-3">
-                        <input type="text" name="name" class="form-control" placeholder="Название клуба" required>
-                    </div>
-                    <div class="mb-3">
-                        <input type="text" name="address" class="form-control" placeholder="Адрес (ул. Абая 10)" required>
-                    </div>
-                    <button type="submit" class="btn btn-neon w-100">СОЗДАТЬ КЛУБ</button>
-                </form>
+<body>
+    <main class="container-fluid shell py-4">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <h1 class="fw-bold mb-1"><i class="bi bi-command text-info"></i> CyberBooking CRM</h1>
+                <div class="text-secondary">Клубы владельца: {{ owner.email if owner else '' }}</div>
+            </div>
+            <div class="d-flex gap-2">
+                <span class="badge text-bg-dark border border-info px-3 py-2">
+                    <i class="bi bi-bell text-info"></i> {{ analytics.unread_notifications }} новых
+                </span>
+                <a href="/user/dashboard" class="btn btn-outline-info btn-sm">К клиентскому виду</a>
+                <a href="/logout" class="btn btn-outline-danger btn-sm">Выйти</a>
             </div>
         </div>
 
-        <div class="tab-pane fade" id="tariffs">
-            <div class="admin-card">
-                <h5 class="mb-4">Создать Пакет времени (Тариф)</h5>
-                <form action="/admin/add_package" method="POST" class="row g-3">
-                    <div class="col-md-3">
-                        <label class="small text-secondary">Клуб</label>
-                        <select name="club_id" class="form-select" required>
-                            {% for club in clubs %}
-                            <option value="{{ club.id }}">{{ club.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="small text-secondary">Название тарифа</label>
-                        <input type="text" name="name" class="form-control" placeholder="Напр: 3 часа VIP" required>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="small text-secondary">Цена (₸)</label>
-                        <input type="number" name="price" class="form-control" required>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="small text-secondary">Минуты</label>
-                        <input type="number" name="duration" class="form-control" placeholder="180" required>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="small text-secondary">Категория ПК</label>
-                        <select name="category" class="form-select">
-                            <option value="Standard">Standard</option>
-                            <option value="VIP">VIP</option>
-                        </select>
-                    </div>
-                    <div class="col-12 text-end">
-                        <button type="submit" class="btn btn-neon px-5">СОЗДАТЬ ТАРИФ</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        <ul class="nav nav-tabs mb-4" id="adminTabs">
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#crm">CRM</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#computers">Компьютеры</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#shop">Товары</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#orders">Заказы</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#clubs">Клубы и игры</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#ai">AI чат</a></li>
+        </ul>
 
-        <div class="tab-pane fade" id="computers">
-            <div class="admin-card">
-                <h5 class="mb-4">Массовое добавление ПК</h5>
-                <form action="/admin/add_computers" method="POST" class="row g-3">
-                    <div class="col-md-4">
-                        <label class="small text-secondary">Выберите клуб</label>
-                        <select name="club_id" class="form-select" required>
-                            {% for club in clubs %}
-                            <option value="{{ club.id }}">{{ club.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="small text-secondary">Количество</label>
-                        <input type="number" name="count" class="form-control" placeholder="Напр: 20" required min="1">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="small text-secondary">Категория зала</label>
-                        <select name="category" class="form-select">
-                            <option value="Standard">Standard Zone</option>
-                            <option value="VIP">VIP Room</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <button type="submit" class="btn btn-primary w-100">ДОБАВИТЬ</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <div class="tab-pane fade" id="users">
-            <div class="admin-card">
-                <h5 class="mb-4">Управление балансом пользователей</h5>
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0">
-                        <thead>
-                            <tr>
-                                <th>Email</th>
-                                <th>Телефон</th>
-                                <th>Баланс</th>
-                                <th class="text-end">Пополнить</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for user in users %}
-                            <tr>
-                                <td>{{ user.email }}</td>
-                                <td>{{ user.phone or '-' }}</td>
-                                <td class="text-info fw-bold">{{ user.balance }} ₸</td>
-                                <td class="text-end">
-                                    <form action="/admin/top_up_balance" method="POST" class="d-inline-flex gap-2">
-                                        <input type="hidden" name="user_id" value="{{ user.id }}">
-                                        <input type="number" name="amount" class="form-control form-control-sm" style="width: 100px;" placeholder="+₸" required>
-                                        <button type="submit" class="btn btn-sm btn-success">ОК</button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        <div class="tab-content">
+            <section class="tab-pane fade show active" id="crm">
+                <div class="row g-3 mb-3">
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Клубы</div><div class="metric-value">{{ analytics.clubs }}</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">ПК всего</div><div class="metric-value">{{ analytics.total_pcs }}</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Свободно</div><div class="metric-value text-success">{{ analytics.free_pcs }}</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Занято</div><div class="metric-value text-danger">{{ analytics.busy_pcs }}</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Заказы</div><div class="metric-value text-info">{{ analytics.orders }}</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Загрузка</div><div class="metric-value text-warning">{{ analytics.occupancy }}%</div></div></div>
                 </div>
-            </div>
-        </div>
 
-        <div class="tab-pane fade" id="shop">
-            <div class="admin-card">
-                <h5 class="mb-4">Добавить товар в кибер-маркет</h5>
-                <form action="/admin/add_product" method="POST" class="row g-3">
-                    <div class="col-md-3">
-                        <label class="small text-secondary">Клуб</label>
-                        <select name="club_id" class="form-select" required>
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <div class="panel">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0">Аналитика мест</h5>
+                                <span class="text-secondary small">free / busy / reserved</span>
+                            </div>
+                            <div class="chart-wrap"><canvas id="pcChart"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel">
+                            <h5 class="mb-3">Уведомления</h5>
+                            <div class="d-grid gap-2">
+                                {% for note in notifications %}
+                                <div class="notification">
+                                    <div class="d-flex justify-content-between gap-2">
+                                        <strong>{{ note.title }}</strong>
+                                        <span class="text-secondary small">{{ note.created_at.strftime('%d.%m %H:%M') }}</span>
+                                    </div>
+                                    <div class="text-secondary small">{{ note.message }}</div>
+                                </div>
+                                {% else %}
+                                <div class="text-secondary">Пока тихо: новых событий нет.</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="tab-pane fade" id="computers">
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <div class="panel">
+                            <h5 class="mb-3">Карта мест</h5>
                             {% for club in clubs %}
-                            <option value="{{ club.id }}">{{ club.name }}</option>
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="mb-0">{{ club.name }}</h6>
+                                    <span class="text-secondary small">{{ club.address }}</span>
+                                </div>
+                                <div class="pc-map">
+                                    {% for pc in computers if pc.club_id == club.id %}
+                                    <div class="pc-tile pc-{{ pc.status }}">
+                                        <div class="d-flex justify-content-between">
+                                            <strong>#{{ pc.number }}</strong>
+                                            <i class="bi bi-pc-display"></i>
+                                        </div>
+                                        <div class="small text-secondary">{{ pc.category }}</div>
+                                        <form action="/admin/update_computer_status" method="POST" class="mt-2">
+                                            <input type="hidden" name="pc_id" value="{{ pc.id }}">
+                                            <select name="status" class="form-select form-select-sm mb-2">
+                                                <option value="free" {% if pc.status == 'free' %}selected{% endif %}>free</option>
+                                                <option value="busy" {% if pc.status == 'busy' %}selected{% endif %}>busy</option>
+                                                <option value="reserved" {% if pc.status == 'reserved' %}selected{% endif %}>reserved</option>
+                                            </select>
+                                            <button class="btn btn-outline-info btn-sm w-100" type="submit">Сохранить</button>
+                                        </form>
+                                    </div>
+                                    {% else %}
+                                    <div class="text-secondary small">В этом клубе пока нет ПК.</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
                             {% endfor %}
-                        </select>
+                        </div>
                     </div>
-                    <div class="col-md-3">
-                        <label class="small text-secondary">Название товара</label>
-                        <input type="text" name="name" class="form-control" placeholder="Cola / Чипсы" required>
+                    <div class="col-lg-4">
+                        <div class="panel mb-3">
+                            <h5 class="mb-3">Подключить ПК</h5>
+                            <form action="/admin/add_computer" method="POST" class="row g-2">
+                                <div class="col-12">
+                                    <select name="club_id" class="form-select" required>
+                                        {% for club in clubs %}<option value="{{ club.id }}">{{ club.name }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-6"><input type="number" name="number" class="form-control" placeholder="Номер" required></div>
+                                <div class="col-6">
+                                    <select name="category" class="form-select">
+                                        <option value="Standard">Standard</option>
+                                        <option value="VIP">VIP</option>
+                                    </select>
+                                </div>
+                                <div class="col-4"><input type="number" name="position_x" class="form-control" placeholder="X" value="0"></div>
+                                <div class="col-4"><input type="number" name="position_y" class="form-control" placeholder="Y" value="0"></div>
+                                <div class="col-4">
+                                    <select name="status" class="form-select">
+                                        <option value="free">free</option>
+                                        <option value="busy">busy</option>
+                                        <option value="reserved">reserved</option>
+                                    </select>
+                                </div>
+                                <div class="col-12"><button class="btn btn-neon w-100" type="submit">Подключить</button></div>
+                            </form>
+                        </div>
+                        <div class="panel">
+                            <h5 class="mb-3">Массовое добавление</h5>
+                            <form action="/admin/add_computers" method="POST" class="row g-2">
+                                <div class="col-12">
+                                    <select name="club_id" class="form-select">
+                                        {% for club in clubs %}<option value="{{ club.id }}">{{ club.name }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-6"><input type="number" name="count" class="form-control" placeholder="Кол-во" required></div>
+                                <div class="col-6">
+                                    <select name="category" class="form-select">
+                                        <option value="Standard">Standard</option>
+                                        <option value="VIP">VIP</option>
+                                    </select>
+                                </div>
+                                <div class="col-12"><button type="submit" class="btn btn-outline-info w-100">Добавить пачкой</button></div>
+                            </form>
+                        </div>
                     </div>
-                    <div class="col-md-2">
-                        <label class="small text-secondary">Цена ₸</label>
-                        <input type="number" name="price" class="form-control" placeholder="500" required>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="small text-secondary">URL картинки</label>
-                        <input type="text" name="image_url" class="form-control" placeholder="https://...">
-                    </div>
-                    <div class="col-md-1 d-flex align-items-end">
-                        <button type="submit" class="btn btn-success w-100">ОК</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                </div>
+            </section>
 
-        <div class="tab-pane fade" id="orders">
-            <div class="admin-card">
-                <h5 class="mb-4">История покупок (Кибер-Маркет)</h5>
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover border-secondary">
-                        <thead>
-                            <tr>
-                                <th>Дата</th>
-                                <th>Пользователь</th>
-                                <th>Товар</th>
-                                <th>Статус</th>
-                                <th class="text-end">Действие</th>
-                            </tr>
-                        </thead>
+            <section class="tab-pane fade" id="shop">
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <div class="panel">
+                            <h5 class="mb-3">Товары</h5>
+                            <table class="table align-middle">
+                                <thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>Клуб</th></tr></thead>
+                                <tbody>
+                                    {% for product in products %}
+                                    <tr>
+                                        <td>#{{ product.id }}</td>
+                                        <td>{{ product.name }}</td>
+                                        <td>{{ product.price }} ₸</td>
+                                        <td>{{ product.club.name if product.club else '-' }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="4" class="text-secondary">Товаров пока нет.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel mb-3">
+                            <h5 class="mb-3">Добавить товар</h5>
+                            <form action="/admin/add_product" method="POST" class="row g-2">
+                                <div class="col-12">
+                                    <select name="club_id" class="form-select">
+                                        {% for club in clubs %}<option value="{{ club.id }}">{{ club.name }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-6"><input type="text" name="name" class="form-control" placeholder="Название" required></div>
+                                <div class="col-6"><input type="number" name="price" class="form-control" placeholder="Цена ₸" required></div>
+                                <div class="col-12"><input type="text" name="image_url" class="form-control" placeholder="URL картинки"></div>
+                                <div class="col-12"><button type="submit" class="btn btn-neon w-100">Добавить</button></div>
+                            </form>
+                        </div>
+                        <div class="panel">
+                            <h5 class="mb-3">Импорт CSV/XLSX</h5>
+                            <form action="/admin/import_products" method="POST" enctype="multipart/form-data" class="row g-2">
+                                <div class="col-12">
+                                    <select name="club_id" class="form-select">
+                                        {% for club in clubs %}<option value="{{ club.id }}">{{ club.name }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-12"><input type="file" name="file" class="form-control" accept=".csv,.xlsx" required></div>
+                                <div class="col-12 text-secondary small">Колонки: name/название, price/цена, image_url/картинка.</div>
+                                <div class="col-12"><button type="submit" class="btn btn-outline-info w-100">Загрузить товары</button></div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="tab-pane fade" id="orders">
+                <div class="panel">
+                    <h5 class="mb-3">Активные заказы</h5>
+                    <table class="table align-middle">
+                        <thead><tr><th>ID</th><th>Пользователь</th><th>Товар</th><th>Статус</th></tr></thead>
                         <tbody>
                             {% for order in orders %}
                             <tr>
-                                <td class="small">{{ order.created_at.strftime('%d.%m %H:%M') if order.created_at else '-' }}</td>
-                                <td>{{ order.user.email }}</td>
-                                <td>{{ order.product.name }}</td>
-                                <td>
-                                    {% if order.status == 'new' or order.status == 'pending' %}
-                                    <span class="badge bg-warning text-dark">Новый</span>
-                                    {% else %}
-                                    <span class="badge bg-success">Выполнен</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">
-                                    {% if order.status == 'new' or order.status == 'pending' %}
-                                    <form action="/admin/complete_order/{{ order.id }}" method="POST" class="d-inline">
-                                        <button type="submit" class="btn btn-sm btn-outline-info">Выполнить</button>
-                                    </form>
-                                    {% endif %}
-                                </td>
+                                <td>#{{ order.id }}</td>
+                                <td>{{ order.user.email if order.user else 'Удален' }}</td>
+                                <td>{{ order.product.name if order.product else 'Удален' }}</td>
+                                <td><span class="badge text-bg-info">{{ order.status }}</span></td>
                             </tr>
                             {% else %}
-                            <tr>
-                                <td colspan="5" class="text-center text-secondary">Заказов пока нет</td>
-                            </tr>
+                            <tr><td colspan="4" class="text-secondary">Новых заказов нет.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </section>
+
+            <section class="tab-pane fade" id="clubs">
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <div class="panel">
+                            <h5 class="mb-3">Добавить клуб</h5>
+                            <form action="/admin/add_club" method="POST">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-7">
+                                        <input type="text" name="name" class="form-control" placeholder="Название" required>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <input type="text" name="city" class="form-control" placeholder="Город">
+                                    </div>
+                                </div>
+                                <input type="text" name="address" class="form-control mb-2" placeholder="Адрес" required>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-7">
+                                        <input type="text" name="photo_url" class="form-control" placeholder="URL фото клуба">
+                                    </div>
+                                    <div class="col-md-5">
+                                        <input type="text" name="working_hours" class="form-control" placeholder="График" value="24/7">
+                                    </div>
+                                </div>
+                                <input type="text" name="contact_phone" class="form-control mb-2" placeholder="Телефон клуба">
+                                <textarea name="description" class="form-control mb-2" rows="3" placeholder="Описание клуба"></textarea>
+                                <textarea name="amenities" class="form-control mb-3" rows="3" placeholder="Что есть: VIP, PS5, напитки, снеки, турниры"></textarea>
+                                <label class="small text-secondary mb-2">Установленные игры</label>
+                                <div class="game-box mb-3">
+                                    <div class="d-flex flex-wrap gap-3">
+                                        {% for game in all_games %}
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="game_ids" value="{{ game.id }}" id="game_{{ game.id }}">
+                                            <label class="form-check-label" for="game_{{ game.id }}">{{ game.name }}</label>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-neon w-100">Создать клуб</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel">
+                            <h5 class="mb-3">Добавить игру</h5>
+                            <form action="/admin/add_game" method="POST" class="d-flex gap-2">
+                                <input type="text" name="name" class="form-control" placeholder="Название игры" required>
+                                <button type="submit" class="btn btn-neon px-4">Добавить</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="tab-pane fade" id="ai">
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <div class="panel">
+                            <h5 class="mb-3">AI помощник администратора</h5>
+                            <div class="chat-log mb-3" id="chatLog">
+                                <div class="chat-msg chat-ai">Готов помочь по проекту, заказам, местам и товарам.</div>
+                            </div>
+                            <form id="chatForm" class="d-flex gap-2">
+                                <input id="chatInput" class="form-control" placeholder="Например: что сейчас с загрузкой зала?" autocomplete="off">
+                                <button class="btn btn-neon" type="submit"><i class="bi bi-send"></i></button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="panel">
+                            <h5 class="mb-3">Контекст</h5>
+                            <div class="text-secondary small">
+                                Чат получает сводку проекта, модели данных и текущую статистику из базы. Ключ Groq должен лежать в переменной окружения <code>GROQ_API_KEY</code>.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
-    </div>
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        new Chart(document.getElementById('pcChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Свободно', 'Занято', 'Забронировано'],
+                datasets: [{
+                    data: [{{ analytics.free_pcs }}, {{ analytics.busy_pcs }}, {{ analytics.reserved_pcs }}],
+                    backgroundColor: ['#20c997', '#dc3545', '#ffc107'],
+                    borderColor: '#151515',
+                    borderWidth: 4
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#f7f7f7' } } }
+            }
+        });
+
+        const chatForm = document.getElementById('chatForm');
+        const chatInput = document.getElementById('chatInput');
+        const chatLog = document.getElementById('chatLog');
+
+        function appendMessage(text, type) {
+            const node = document.createElement('div');
+            node.className = `chat-msg ${type === 'user' ? 'chat-user' : 'chat-ai'}`;
+            node.textContent = text;
+            chatLog.appendChild(node);
+            chatLog.scrollTop = chatLog.scrollHeight;
+            return node;
+        }
+
+        chatForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const message = chatInput.value.trim();
+            if (!message) return;
+            appendMessage(message, 'user');
+            chatInput.value = '';
+            const loading = appendMessage('Думаю...', 'ai');
+
+            try {
+                const response = await fetch('/admin/ai_chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await response.json();
+                loading.textContent = data.answer || 'Ответ не получен.';
+            } catch (error) {
+                loading.textContent = 'Не удалось отправить запрос к AI.';
+            }
+        });
+    </script>
 </body>
 </html>
