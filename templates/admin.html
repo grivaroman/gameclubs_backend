@@ -57,17 +57,18 @@
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#shop">Товары</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#orders">Заказы</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#clubs">Клубы и игры</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#finance">Финансы</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#ai">AI чат</a></li>
         </ul>
 
         <div class="tab-content">
             <section class="tab-pane fade show active" id="crm">
                 <div class="row g-3 mb-3">
-                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Клубы</div><div class="metric-value">{{ analytics.clubs }}</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Доход</div><div class="metric-value text-success">{{ finance.revenue_total }}₸</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Расход</div><div class="metric-value text-danger">{{ finance.expense_total }}₸</div></div></div>
+                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Прибыль</div><div class="metric-value {% if finance.profit >= 0 %}text-info{% else %}text-warning{% endif %}">{{ finance.profit }}₸</div></div></div>
                     <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">ПК всего</div><div class="metric-value">{{ analytics.total_pcs }}</div></div></div>
-                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Свободно</div><div class="metric-value text-success">{{ analytics.free_pcs }}</div></div></div>
                     <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Занято</div><div class="metric-value text-danger">{{ analytics.busy_pcs }}</div></div></div>
-                    <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Заказы</div><div class="metric-value text-info">{{ analytics.orders }}</div></div></div>
                     <div class="col-6 col-lg-2"><div class="panel metric"><div class="text-secondary small">Загрузка</div><div class="metric-value text-warning">{{ analytics.occupancy }}%</div></div></div>
                 </div>
 
@@ -75,14 +76,14 @@
                     <div class="col-lg-7">
                         <div class="panel">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h5 class="mb-0">Аналитика мест</h5>
-                                <span class="text-secondary small">free / busy / reserved</span>
+                                <h5 class="mb-0">Доходы и расходы</h5>
+                                <span class="text-secondary small">последние 7 дней</span>
                             </div>
-                            <div class="chart-wrap"><canvas id="pcChart"></canvas></div>
+                            <div class="chart-wrap"><canvas id="financeChart"></canvas></div>
                         </div>
                     </div>
                     <div class="col-lg-5">
-                        <div class="panel">
+                        <div class="panel mb-3">
                             <h5 class="mb-3">Уведомления</h5>
                             <div class="d-grid gap-2">
                                 {% for note in notifications %}
@@ -97,6 +98,93 @@
                                 <div class="text-secondary">Пока тихо: новых событий нет.</div>
                                 {% endfor %}
                             </div>
+                        </div>
+                        <div class="panel">
+                            <h5 class="mb-3">Антифрод сигналы</h5>
+                            <div class="d-grid gap-2">
+                                {% for signal in fraud_signals %}
+                                <div class="notification">
+                                    <div class="d-flex justify-content-between gap-2">
+                                        <strong>{{ signal.event_type }}</strong>
+                                        <span class="badge {% if signal.severity == 'high' %}text-bg-danger{% elif signal.severity == 'medium' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">
+                                            {{ signal.score }}
+                                        </span>
+                                    </div>
+                                    <div class="text-secondary small">{{ signal.reason }}</div>
+                                    <div class="text-secondary small">{{ signal.created_at.strftime('%d.%m %H:%M') }}</div>
+                                </div>
+                                {% else %}
+                                <div class="text-secondary">Подозрительных действий нет.</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="tab-pane fade" id="finance">
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <div class="panel mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0">Финансовая диаграмма</h5>
+                                <span class="text-secondary small">доход / расход</span>
+                            </div>
+                            <div class="chart-wrap"><canvas id="financeDetailChart"></canvas></div>
+                        </div>
+                        <div class="panel">
+                            <h5 class="mb-3">Последние расходы</h5>
+                            <table class="table align-middle">
+                                <thead><tr><th>Дата</th><th>Название</th><th>Категория</th><th>Сумма</th></tr></thead>
+                                <tbody>
+                                    {% for expense in expenses %}
+                                    <tr>
+                                        <td>{{ expense.spent_at.strftime('%d.%m %H:%M') }}</td>
+                                        <td>{{ expense.title }}</td>
+                                        <td><span class="badge text-bg-dark border border-secondary">{{ expense.category }}</span></td>
+                                        <td class="text-danger fw-bold">{{ expense.amount }} ₸</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="4" class="text-secondary">Расходов пока нет.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="panel mb-3">
+                            <h5 class="mb-3">Сводка</h5>
+                            <div class="d-grid gap-2">
+                                <div class="d-flex justify-content-between"><span class="text-secondary">Брони</span><strong>{{ finance.booking_revenue }} ₸</strong></div>
+                                <div class="d-flex justify-content-between"><span class="text-secondary">Товары</span><strong>{{ finance.order_revenue }} ₸</strong></div>
+                                <div class="d-flex justify-content-between"><span class="text-secondary">Расходы</span><strong class="text-danger">{{ finance.expense_total }} ₸</strong></div>
+                                <hr class="border-secondary">
+                                <div class="d-flex justify-content-between"><span>Итого</span><strong class="{% if finance.profit >= 0 %}text-success{% else %}text-warning{% endif %}">{{ finance.profit }} ₸</strong></div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <h5 class="mb-3">Добавить расход</h5>
+                            <form action="/admin/add_expense" method="POST" class="row g-2">
+                                <div class="col-12">
+                                    <select name="club_id" class="form-select" required>
+                                        {% for club in clubs %}<option value="{{ club.id }}">{{ club.name }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-12"><input type="text" name="title" class="form-control" placeholder="Название расхода" required></div>
+                                <div class="col-6"><input type="number" name="amount" class="form-control" placeholder="Сумма ₸" min="1" required></div>
+                                <div class="col-6">
+                                    <select name="category" class="form-select">
+                                        <option value="rent">Аренда</option>
+                                        <option value="salary">Зарплата</option>
+                                        <option value="hardware">Железо</option>
+                                        <option value="products">Закуп товара</option>
+                                        <option value="utilities">Коммунальные</option>
+                                        <option value="other">Другое</option>
+                                    </select>
+                                </div>
+                                <div class="col-12"><textarea name="comment" class="form-control" rows="3" placeholder="Комментарий"></textarea></div>
+                                <div class="col-12"><button type="submit" class="btn btn-neon w-100">Записать расход</button></div>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -129,6 +217,9 @@
                                                 <option value="reserved" {% if pc.status == 'reserved' %}selected{% endif %}>reserved</option>
                                             </select>
                                             <button class="btn btn-outline-info btn-sm w-100" type="submit">Сохранить</button>
+                                        </form>
+                                        <form action="/admin/computers/{{ pc.id }}/issue_ws_token" method="POST" class="mt-2">
+                                            <button class="btn btn-outline-warning btn-sm w-100" type="submit">WS-токен</button>
                                         </form>
                                     </div>
                                     {% else %}
@@ -306,12 +397,63 @@
                         </div>
                     </div>
                     <div class="col-lg-5">
-                        <div class="panel">
+                        <div class="panel mb-3">
                             <h5 class="mb-3">Добавить игру</h5>
                             <form action="/admin/add_game" method="POST" class="d-flex gap-2">
                                 <input type="text" name="name" class="form-control" placeholder="Название игры" required>
                                 <button type="submit" class="btn btn-neon px-4">Добавить</button>
                             </form>
+                        </div>
+                        <div class="panel">
+                            <h5 class="mb-3">Интеграция 1С</h5>
+                            <div class="d-grid gap-3">
+                                {% for club in clubs %}
+                                {% set integration = integrations.get(club.id) %}
+                                <div class="border border-secondary rounded p-3">
+                                    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                        <strong>{{ club.name }}</strong>
+                                        {% if integration and integration.last_status %}
+                                        <span class="badge text-bg-dark border border-info">{{ integration.last_status }}</span>
+                                        {% endif %}
+                                    </div>
+                                    <form action="/admin/integrations/1c" method="POST" class="row g-2">
+                                        <input type="hidden" name="club_id" value="{{ club.id }}">
+                                        <div class="col-12">
+                                            <input type="url" name="base_url" class="form-control" placeholder="https://1c.example.kz/club-api/" value="{{ integration.base_url if integration else '' }}" required>
+                                        </div>
+                                        <div class="col-6">
+                                            <input type="text" name="username" class="form-control" placeholder="Логин 1С" value="{{ integration.username if integration and integration.username else '' }}">
+                                        </div>
+                                        <div class="col-6">
+                                            <input type="text" name="secret_env_key" class="form-control" placeholder="ENV ключ секрета" value="{{ integration.secret_env_key if integration and integration.secret_env_key else '' }}">
+                                        </div>
+                                        <div class="col-12">
+                                            <input type="text" name="health_path" class="form-control" placeholder="/hs/cyberbooking/ping" value="{{ integration.health_path if integration and integration.health_path else '/' }}">
+                                        </div>
+                                        <div class="col-12 d-flex flex-wrap gap-3 small">
+                                            <label class="form-check">
+                                                <input class="form-check-input" type="checkbox" name="sync_products" value="1" {% if not integration or integration.sync_products %}checked{% endif %}> Товары
+                                            </label>
+                                            <label class="form-check">
+                                                <input class="form-check-input" type="checkbox" name="sync_orders" value="1" {% if not integration or integration.sync_orders %}checked{% endif %}> Заказы
+                                            </label>
+                                            <label class="form-check">
+                                                <input class="form-check-input" type="checkbox" name="sync_balances" value="1" {% if integration and integration.sync_balances %}checked{% endif %}> Балансы
+                                            </label>
+                                        </div>
+                                        <div class="col-7"><button type="submit" class="btn btn-neon w-100">Сохранить</button></div>
+                                    </form>
+                                    {% if integration %}
+                                    <form action="/admin/integrations/1c/test" method="POST" class="mt-2">
+                                        <input type="hidden" name="club_id" value="{{ club.id }}">
+                                        <button type="submit" class="btn btn-outline-info btn-sm w-100">Проверить подключение</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                {% else %}
+                                <div class="text-secondary small">Сначала дождитесь одобрения клуба.</div>
+                                {% endfor %}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -347,22 +489,35 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        new Chart(document.getElementById('pcChart'), {
-            type: 'doughnut',
-            data: {
-                labels: ['Свободно', 'Занято', 'Забронировано'],
-                datasets: [{
-                    data: [{{ analytics.free_pcs }}, {{ analytics.busy_pcs }}, {{ analytics.reserved_pcs }}],
-                    backgroundColor: ['#20c997', '#dc3545', '#ffc107'],
-                    borderColor: '#151515',
-                    borderWidth: 4
-                }]
-            },
-            options: {
-                maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: '#f7f7f7' } } }
-            }
-        });
+        const financeLabels = {{ finance.labels|tojson }};
+        const financeIncome = {{ finance.income_series|tojson }};
+        const financeExpenses = {{ finance.expense_series|tojson }};
+
+        function mountFinanceChart(elementId) {
+            const canvas = document.getElementById(elementId);
+            if (!canvas) return;
+            new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: financeLabels,
+                    datasets: [
+                        { label: 'Доход', data: financeIncome, backgroundColor: '#20c997', borderRadius: 6 },
+                        { label: 'Расход', data: financeExpenses, backgroundColor: '#dc3545', borderRadius: 6 }
+                    ]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#d7d7d7' }, grid: { color: '#242424' } },
+                        y: { ticks: { color: '#d7d7d7' }, grid: { color: '#242424' } }
+                    },
+                    plugins: { legend: { labels: { color: '#f7f7f7' } } }
+                }
+            });
+        }
+
+        mountFinanceChart('financeChart');
+        mountFinanceChart('financeDetailChart');
 
         const chatForm = document.getElementById('chatForm');
         const chatInput = document.getElementById('chatInput');

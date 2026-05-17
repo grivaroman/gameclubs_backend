@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Суперадмин | CyberBooking</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #090909; color: #f7f7f7; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .shell { max-width: 1320px; }
+        .panel { background: #151515; border: 1px solid #303030; border-radius: 8px; padding: 20px; }
+        .metric { min-height: 94px; }
+        .metric-value { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+        .table { --bs-table-bg: transparent; --bs-table-color: #fff; --bs-table-border-color: #303030; }
+        .form-control { background: #202020; border: 1px solid #444; color: #fff; }
+        .form-control:focus { background: #242424; color: #fff; border-color: #0dcaf0; box-shadow: none; }
+        .club-photo { width: 92px; height: 62px; object-fit: cover; border-radius: 6px; background: #252525; }
+    </style>
+</head>
+<body>
+    <main class="container-fluid shell py-4">
+        <div class="d-flex justify-content-between align-items-center gap-3 mb-4">
+            <div>
+                <h1 class="fw-bold mb-1">Superadmin</h1>
+                <div class="text-secondary">Модерация заявок владельцев и клубов</div>
+            </div>
+            <a href="/logout" class="btn btn-outline-danger btn-sm">Выйти</a>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-lg-3"><div class="panel metric"><div class="text-secondary small">На проверке</div><div class="metric-value text-warning">{{ stats.pending }}</div></div></div>
+            <div class="col-6 col-lg-3"><div class="panel metric"><div class="text-secondary small">Активные</div><div class="metric-value text-success">{{ stats.active }}</div></div></div>
+            <div class="col-6 col-lg-3"><div class="panel metric"><div class="text-secondary small">Заблокированы</div><div class="metric-value text-danger">{{ stats.blocked }}</div></div></div>
+            <div class="col-6 col-lg-3"><div class="panel metric"><div class="text-secondary small">Пользователи</div><div class="metric-value text-info">{{ stats.users }}</div></div></div>
+        </div>
+
+        <section class="panel mb-3">
+            <h5 class="mb-3">Новые заявки</h5>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead><tr><th>Клуб</th><th>Владелец</th><th>Описание</th><th>Игры</th><th class="text-end">Решение</th></tr></thead>
+                    <tbody>
+                        {% for club in pending_clubs %}
+                        <tr>
+                            <td>
+                                <div class="d-flex gap-3 align-items-center">
+                                    {% if club.photo_url %}<img src="{{ club.photo_url }}" class="club-photo" alt="{{ club.name }}">{% endif %}
+                                    <div>
+                                        <strong>{{ club.name }}</strong>
+                                        <div class="text-secondary small">{{ club.city }} {{ club.address }}</div>
+                                        <div class="text-secondary small">{{ club.contact_phone or '-' }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>{{ club.owner.email if club.owner else '-' }}</td>
+                            <td class="small text-secondary" style="max-width: 280px;">{{ club.description or '-' }}</td>
+                            <td>
+                                {% for game in club.games %}
+                                <span class="badge border border-info text-info">{{ game.name }}</span>
+                                {% endfor %}
+                            </td>
+                            <td class="text-end">
+                                <form action="/superadmin/clubs/{{ club.id }}/approve" method="POST" class="d-inline">
+                                    <button class="btn btn-sm btn-success" type="submit">Одобрить</button>
+                                </form>
+                                <form action="/superadmin/clubs/{{ club.id }}/reject" method="POST" class="d-inline-flex gap-1 mt-1">
+                                    <input name="comment" class="form-control form-control-sm" placeholder="Причина отказа">
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">Отклонить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-secondary">Новых заявок нет.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h5 class="mb-3">Все клубы</h5>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead><tr><th>ID</th><th>Клуб</th><th>Владелец</th><th>Статус</th><th>Комментарий</th><th class="text-end">Действия</th></tr></thead>
+                    <tbody>
+                        {% for club in clubs %}
+                        <tr>
+                            <td>#{{ club.id }}</td>
+                            <td>
+                                <strong>{{ club.name }}</strong>
+                                <div class="text-secondary small">{{ club.city }} {{ club.address }}</div>
+                            </td>
+                            <td>{{ club.owner.email if club.owner else '-' }}</td>
+                            <td><span class="badge text-bg-dark border border-secondary">{{ club.status }}</span></td>
+                            <td class="text-secondary small">{{ club.moderation_comment or '-' }}</td>
+                            <td class="text-end">
+                                {% if club.status != 'active' %}
+                                <form action="/superadmin/clubs/{{ club.id }}/restore" method="POST" class="d-inline">
+                                    <button class="btn btn-sm btn-outline-success" type="submit">Активировать</button>
+                                </form>
+                                {% endif %}
+                                {% if club.status != 'blocked' %}
+                                <form action="/superadmin/clubs/{{ club.id }}/block" method="POST" class="d-inline-flex gap-1">
+                                    <input name="comment" class="form-control form-control-sm" placeholder="Причина">
+                                    <button class="btn btn-sm btn-outline-warning" type="submit">Блок</button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

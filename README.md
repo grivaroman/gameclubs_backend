@@ -25,7 +25,8 @@ gameclubs_backend/
 ├── web/                  # Роутеры для Web-интерфейса (Jinja)
 │   ├── auth.py           # Регистрация, логин, логаут
 │   ├── user.py           # Клиентская часть (бронирование, заказы)
-│   └── admin.py          # Панель администратора
+│   ├── admin.py          # CRM владельца клуба
+│   └── superadmin.py     # Модерация заявок и клубов
 ├── api/                  # Готовые роутеры для JSON API без UI
 ├── templates/            # HTML/Jinaja2 шаблоны
 └── Dockerfile & docker-compose.yml
@@ -51,9 +52,45 @@ pip install -r requirements.txt
 
 2. Укажите правильный путь базы данных (например, поднятой отдельно) в файле `.env` (если он есть), либо установите переменную окружения `DATABASE_URL`. По умолчанию приложение будет использовать `postgresql+asyncpg://postgres:12345678@localhost:5432/club`.
 
-3. Запустите uvicorn (с горячей перезагрузкой):
+Минимальные переменные для продового запуска:
+
+```env
+DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/club
+SECRET_KEY=change-this-long-random-secret
+SUPERADMIN_EMAIL=owner@example.com
+SUPERADMIN_PASSWORD=change-this-password
+GROQ_API_KEY=optional-for-admin-ai-chat
+```
+
+3. Примените миграции базы данных:
+
+```bash
+alembic upgrade head
+```
+
+Для локального dev-режима можно временно включить авто-создание схемы через `AUTO_CREATE_DB_SCHEMA=true`, но для staging/production используйте только Alembic.
+
+4. Запустите uvicorn (с горячей перезагрузкой):
 ```bash
 uvicorn main:app --reload
+```
+
+### Миграции Alembic
+
+Схема базы управляется через Alembic. Базовые команды:
+
+```bash
+alembic upgrade head
+alembic downgrade -1
+alembic revision --autogenerate -m "describe change"
+alembic current
+alembic history
+```
+
+Первая ревизия находится в `alembic/versions/0001_initial_schema.py`. Если база уже была создана старым `create_all`, перед переходом на Alembic нужно один раз синхронизировать состояние:
+
+```bash
+alembic stamp head
 ```
 
 ## Бизнес-логика и особенности
@@ -61,10 +98,14 @@ uvicorn main:app --reload
 ### Сессии и безопасность
 Аутентификация реализована полностью *Stateless*. После регистрации и проверки хэшированного bcrypt пароля, генерируется `JWT token`, который записывается клиенту в **HttpOnly** Cookie (`access_token`). 
 
-### Роли
-Система поддерживает две роли:
-- **admin** (управление клубами, компьютерами, играми и товарами)
-- **user** (возможность выбирать клуб, бронировать ПК и покупать товары в баре)
+### Роли и модерация клубов
+Система поддерживает несколько ролей:
+- **user** — игрок, видит только активные клубы.
+- **pending_owner** — владелец, который отправил заявку на клуб и ждет модерации.
+- **admin** / **owner** — владелец одобренного клуба, управляет только своими активными клубами.
+- **superadmin** — модерирует заявки, активирует, отклоняет и блокирует клубы.
+
+Регистрация игрока всегда создает `user`. Заявка владельца создает `pending_owner` и клуб со статусом `pending`; доступ к CRM появляется только после одобрения в `/superadmin`.
 
 ### Бронирование и Тарифы
 Компьютеры имеют свойство `status` (`free`, `busy`). Когда место бронируется, оно помечается как `busy`, фиксирует идентификатор пользователя и рассчитывает `end_time` на основе выбранного тарифа (пакета).

@@ -19,5 +19,7 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Run the application with 4 workers for production
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Run migrations before the app starts. Keep one worker until WebSocket state and
+# background jobs are moved out of process memory.
+ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -5,6 +5,7 @@ from sqlalchemy.future import select
 from jose import JWTError, jwt
 import models
 from config import settings
+from core.roles import is_valid_role
 
 templates = Jinja2Templates(directory="templates")
 
@@ -24,4 +25,9 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     except JWTError:
         return None
     res = await db.execute(select(models.User).filter(models.User.email == email))
-    return res.scalars().first()
+    user = res.scalars().first()
+    if user and not user.is_active:
+        return None
+    if user and not is_valid_role(user.role):
+        return None
+    return user
