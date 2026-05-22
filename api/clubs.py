@@ -30,6 +30,8 @@ def club_to_response(club: models.Club) -> ClubResponse:
                 name=p.name,
                 price=p.price,
                 duration_minutes=p.duration_minutes,
+                paid_minutes=p.paid_minutes,
+                bonus_minutes=p.bonus_minutes or 0,
                 pc_category=p.pc_category,
             )
             for p in club.packages

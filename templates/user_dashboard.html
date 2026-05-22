@@ -25,6 +25,9 @@
         .btn-book { background: #0dcaf0; color: #000; border: none; font-weight: 800; border-radius: 8px; padding: 12px; }
         .btn-book:hover { background: #6fe6ff; color: #000; }
         .empty { border: 1px dashed #444; border-radius: 8px; padding: 48px; text-align: center; }
+        .rating { color: #ffc107; font-weight: 800; }
+        .seat-line { height: 8px; background: #2a2a2a; border-radius: 999px; overflow: hidden; }
+        .seat-line span { display: block; height: 100%; background: #20c997; }
     </style>
 </head>
 <body>
@@ -32,6 +35,7 @@
         <div class="container">
             <a class="navbar-brand fw-bold" href="/user/dashboard"><span class="text-info">CYBER</span>BOOKING</a>
             <div class="d-flex align-items-center gap-2">
+                <span class="badge text-bg-dark border border-info">Баланс: {{ current_user.balance }}₸</span>
                 <a href="/owner/register" class="btn btn-outline-info btn-sm">Добавить клуб</a>
                 <a href="/logout" class="btn btn-outline-danger btn-sm">Выйти</a>
             </div>
@@ -98,12 +102,28 @@
                                     <h2 class="h5 fw-bold mb-1">{{ club.name }}</h2>
                                     <div class="meta"><i class="bi bi-geo-alt"></i> {{ club.city }} {{ club.address }}</div>
                                 </div>
-                                <span class="badge text-bg-dark border border-secondary">{{ club.working_hours or '24/7' }}</span>
+                                <div class="text-end">
+                                    <div class="rating"><i class="bi bi-star-fill"></i> {{ club_stats.get('rating_avg', 0) }}</div>
+                                    <div class="meta">{{ club_stats.get('review_count', 0) }} отзывов</div>
+                                </div>
                             </div>
+                            <span class="badge text-bg-dark border border-secondary align-self-start mb-3">{{ club.working_hours or '24/7' }}</span>
 
                             {% if club.description %}
                             <p class="text-secondary small mb-3">{{ club.description }}</p>
                             {% endif %}
+
+                            {% set total = club_stats.get('total', 0) %}
+                            {% set free = club_stats.get('free', 0) %}
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between small text-secondary mb-1">
+                                    <span>Свободно {{ free }}</span>
+                                    <span>Занято {{ club_stats.get('busy', 0) }} / Резерв {{ club_stats.get('reserved', 0) }}</span>
+                                </div>
+                                <div class="seat-line">
+                                    <span style="width: {{ (free / total * 100) if total else 0 }}%"></span>
+                                </div>
+                            </div>
 
                             <div class="d-flex flex-wrap gap-2 mb-3">
                                 {% for item in (club.amenities or '').split(',') %}

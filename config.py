@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     allowed_hosts: str = "*"
     allow_private_integration_hosts: bool = False
     auto_create_db_schema: bool = False
+    enable_kaspi_test_payment: bool = False
+    log_level: str = "INFO"
+    log_json: bool = False
+    sentry_dsn: str | None = None
+    release: str | None = None
     superadmin_email: str | None = None
     superadmin_password: str | None = None
 
@@ -42,6 +47,8 @@ class Settings(BaseSettings):
             errors.append("ALLOWED_HOSTS must list explicit hosts in production")
         if self.auto_create_db_schema:
             errors.append("AUTO_CREATE_DB_SCHEMA must be false in production; use Alembic migrations")
+        if self.enable_kaspi_test_payment:
+            errors.append("ENABLE_KASPI_TEST_PAYMENT must be false in production")
         if self.superadmin_password and len(self.superadmin_password) < 12:
             errors.append("SUPERADMIN_PASSWORD must be at least 12 characters when set")
 

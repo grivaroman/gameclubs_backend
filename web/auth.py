@@ -9,15 +9,22 @@ from datetime import datetime, timedelta, timezone
 import models
 from config import settings
 from core.dependencies import templates, get_db
+from core.ratelimit import LOGIN_LIMIT, OWNER_REGISTER_LIMIT, REGISTER_LIMIT, enforce_rate_limit
 from core.roles import ROLE_ADMIN, ROLE_OWNER, ROLE_PENDING_OWNER, ROLE_SUPERADMIN, ROLE_USER
+from core.security import MIN_PASSWORD_LENGTH
 
 router = APIRouter(tags=["web_auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(email: str) -> str:
+    now = datetime.now(timezone.utc)
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-    to_encode = {"sub": email, "exp": datetime.now(timezone.utc) + access_token_expires}
+    to_encode = {
+        "sub": email,
+        "iat": int(now.timestamp()),
+        "exp": now + access_token_expires,
+    }
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 @router.get("/login", response_class=HTMLResponse)
@@ -26,10 +33,14 @@ async def login_page(request: Request):
 
 @router.post("/login")
 async def login_action(
-    email: str = Form(...), 
-    password: str = Form(...), 
-    db: AsyncSession = Depends(get_db)
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db),
 ):
+    limited = await enforce_rate_limit(request, "login", LOGIN_LIMIT)
+    if limited:
+        return limited
     email_clean = email.strip().lower()
     res = await db.execute(select(models.User).filter(models.User.email == email_clean))
     user = res.scalars().first()
@@ -74,11 +85,20 @@ async def owner_pending_page(request: Request):
 
 @router.post("/register")
 async def register_action(
-    email: str = Form(...), 
-    password: str = Form(...), 
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
     phone: str = Form(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
+    limited = await enforce_rate_limit(request, "register", REGISTER_LIMIT)
+    if limited:
+        return limited
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return HTMLResponse(
+            f"Пароль должен быть не короче {MIN_PASSWORD_LENGTH} символов",
+            status_code=400,
+        )
     email_clean = email.strip().lower()
     phone_clean = phone.strip() if phone else None
     res = await db.execute(select(models.User).filter(models.User.email == email_clean))
@@ -104,6 +124,7 @@ async def register_action(
 
 @router.post("/owner/register")
 async def owner_register_action(
+    request: Request,
     email: str = Form(...),
     password: str = Form(...),
     phone: str = Form(None),
@@ -115,8 +136,16 @@ async def owner_register_action(
     amenities: str = Form(""),
     working_hours: str = Form("24/7"),
     game_ids: list[int] = Form([]),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
+    limited = await enforce_rate_limit(request, "owner_register", OWNER_REGISTER_LIMIT)
+    if limited:
+        return limited
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return HTMLResponse(
+            f"Пароль должен быть не короче {MIN_PASSWORD_LENGTH} символов",
+            status_code=400,
+        )
     email_clean = email.strip().lower()
     phone_clean = phone.strip() if phone else None
     res = await db.execute(select(models.User).filter(models.User.email == email_clean))

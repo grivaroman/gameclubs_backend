@@ -25,6 +25,7 @@
         .pc-box.free:hover { border-color: #00d2ff; box-shadow: 0 0 15px rgba(0,210,255,0.4); }
         .pc-box.selected { border-color: #00d2ff; background: rgba(0,210,255,0.2); color: #00d2ff; }
         .pc-box.busy { background: #000; border-color: #f00; opacity: 0.4; cursor: not-allowed; color: #f00; }
+        .pc-box.reserved { background: #211b08; border-color: #ffc107; opacity: 0.62; cursor: not-allowed; color: #ffc107; }
         
         /* Добавленные стили для разделения категорий */
         .pc-box.VIP { border-color: #ffc107; color: #ffc107; }
@@ -33,6 +34,9 @@
         .product-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 15px; text-align: center; height: 100%; transition: 0.3s; }
         .product-card:hover { border-color: #00d2ff; }
         .product-img { width: 100%; height: 120px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; }
+        .rating { color: #ffc107; font-weight: 800; }
+        .review { border-top: 1px solid #303030; padding: 14px 0; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; margin-right: 6px; }
     </style>
 </head>
 <body>
@@ -54,6 +58,7 @@
                         {% if club.city %}<span class="badge bg-dark border border-secondary">{{ club.city }}</span>{% endif %}
                     </div>
                     <h1 class="display-5 fw-bold mb-3">{{ club.name }}</h1>
+                    <div class="rating mb-3"><i class="bi bi-star-fill"></i> {{ rating_avg }} <span class="text-secondary fw-normal">({{ reviews|length }} отзывов)</span></div>
                     <p class="text-secondary mb-2"><i class="bi bi-geo-alt"></i> {{ club.address }}</p>
                     {% if club.contact_phone %}
                     <p class="text-secondary mb-3"><i class="bi bi-telephone"></i> {{ club.contact_phone }}</p>
@@ -75,6 +80,11 @@
         <div class="row">
             <div class="col-lg-8">
                 <div class="info-card">
+                    <div class="d-flex flex-wrap gap-3 mb-4 small text-secondary">
+                        <span><span class="legend-dot bg-success"></span>Свободно</span>
+                        <span><span class="legend-dot bg-danger"></span>Занято</span>
+                        <span><span class="legend-dot bg-warning"></span>Резерв</span>
+                    </div>
                     <h4 class="mb-4 fw-bold text-warning"><i class="bi bi-gem"></i> VIP ZONE</h4>
                     <div class="pc-grid mb-5">
                         {% for pc in computers if pc.category == 'VIP' %}
@@ -82,6 +92,7 @@
                             <i class="bi bi-display mb-1"></i>
                             <span class="fw-bold">{{ pc.number }}</span>
                             <small style="font-size: 0.6rem;">{{ pc.category }}</small>
+                            <small style="font-size: 0.58rem;">{{ pc.status }}</small>
                         </div>
                         {% endfor %}
                     </div>
@@ -93,6 +104,7 @@
                             <i class="bi bi-display mb-1"></i>
                             <span class="fw-bold">{{ pc.number }}</span>
                             <small style="font-size: 0.6rem;">{{ pc.category }}</small>
+                            <small style="font-size: 0.58rem;">{{ pc.status }}</small>
                         </div>
                         {% endfor %}
                     </div>
@@ -119,10 +131,59 @@
                         {% endfor %}
                     </div>
                 </div>
+
+                <div class="info-card" id="reviews">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="fw-bold mb-0">Отзывы</h4>
+                        <div class="rating"><i class="bi bi-star-fill"></i> {{ rating_avg }}</div>
+                    </div>
+                    {% if current_user %}
+                    <form action="/clubs/{{ club.id }}/review" method="POST" class="row g-2 mb-4">
+                        <div class="col-md-3">
+                            <select name="rating" class="form-select bg-dark text-white border-secondary">
+                                {% for value in [5,4,3,2,1] %}
+                                <option value="{{ value }}" {% if current_user_review and current_user_review.rating == value %}selected{% endif %}>{{ value }} звезд</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-7">
+                            <input name="comment" maxlength="1000" class="form-control bg-dark text-white border-secondary" placeholder="Ваш отзыв" value="{{ current_user_review.comment if current_user_review and current_user_review.comment else '' }}">
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-outline-info w-100" type="submit">Сохранить</button>
+                        </div>
+                    </form>
+                    {% endif %}
+
+                    {% for review in reviews %}
+                    <div class="review">
+                        <div class="d-flex justify-content-between gap-3">
+                            <strong>{{ review.user.email }}</strong>
+                            <span class="rating">{{ review.rating }} <i class="bi bi-star-fill"></i></span>
+                        </div>
+                        {% if review.comment %}<div class="text-secondary mt-1">{{ review.comment }}</div>{% endif %}
+                    </div>
+                    {% else %}
+                    <div class="text-secondary">Пока нет отзывов. Будьте первым.</div>
+                    {% endfor %}
+                </div>
             </div>
 
             <div class="col-lg-4">
                 <div class="info-card sticky-top" style="top: 20px;">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-secondary">Баланс</span>
+                        <strong class="text-info">{{ current_user.balance if current_user else 0 }}₸</strong>
+                    </div>
+                    {% if kaspi_test_enabled %}
+                    <div class="mb-4">
+                        <label class="small text-secondary mb-1">Тестовая Kaspi-оплата</label>
+                        <div class="input-group">
+                            <input id="kaspi-amount" type="number" min="500" max="200000" value="5000" class="form-control bg-dark text-white border-secondary">
+                            <button class="btn btn-outline-danger" onclick="payKaspiTest()">Kaspi Test</button>
+                        </div>
+                    </div>
+                    {% endif %}
                     <h4 class="mb-4">Заказ</h4>
                     <div id="booking-info">
                         <p class="text-secondary">Выберите компьютер для бронирования</p>
@@ -157,12 +218,20 @@
         let selectedId = null;
         const allPackages = [
             {% for p in packages %}
-            {id: {{ p.id }}, name: "{{ p.name }}", price: {{ p.price }}, category: "{{ p.pc_category }}", duration: {{ p.duration_minutes }} },
+            {
+                id: {{ p.id }},
+                name: "{{ p.name }}",
+                price: {{ p.price }},
+                category: "{{ p.pc_category }}",
+                duration: {{ p.duration_minutes }},
+                paid: {{ p.paid_minutes or p.duration_minutes }},
+                bonus: {{ p.bonus_minutes or 0 }}
+            },
             {% endfor %}
         ];
         
         function selectSeat(id, num, status, category) {
-            if (status === 'busy') return;
+            if (status !== 'free') return;
             if (selectedId) document.getElementById('pc-'+selectedId).classList.remove('selected');
             selectedId = id;
             document.getElementById('pc-'+id).classList.add('selected');
@@ -178,7 +247,10 @@
             // Фильтруем пакеты по категории ПК
             const filteredPkgs = allPackages.filter(p => p.category === category);
             const select = document.getElementById('package-id');
-            select.innerHTML = filteredPkgs.map(p => `<option value="${p.id}">${p.name} (${p.duration} мин) — ${p.price}₸</option>`).join('');
+            select.innerHTML = filteredPkgs.map((p) => {
+                const bonus = p.bonus > 0 ? `, бонус ${p.bonus} мин` : '';
+                return `<option value="${p.id}">${p.name}: ${p.paid} мин${bonus} = ${p.duration} мин — ${p.price}₸</option>`;
+            }).join('');
             
             document.getElementById('package-selector').style.display = 'block';
             
@@ -212,6 +284,16 @@
                     alert(data.message);
                 }
             }
+        }
+
+        async function payKaspiTest() {
+            const amount = document.getElementById('kaspi-amount').value;
+            const formData = new FormData();
+            formData.append('amount', amount);
+            const res = await fetch('/payments/kaspi/test', { method: 'POST', body: formData });
+            const data = await res.json();
+            alert(data.message);
+            if (data.status === 'success') location.reload();
         }
     </script>
 </body>

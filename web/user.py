@@ -1,19 +1,26 @@
 from fastapi import APIRouter, Request, Depends, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import update
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 import models
+from config import settings
 from core.dependencies import templates, get_db, get_current_user
-from core.finance import debit_user_balance
+from core.finance import credit_user_balance, debit_user_balance
 from core.fraud import evaluate_admin_pc_override, evaluate_booking_success, evaluate_failed_payment, evaluate_order_success
+from core.ratelimit import PAYMENT_LIMIT, enforce_rate_limit
 from core.roles import CLUB_ADMIN_ROLES, ROLE_SUPERADMIN
 from core.ws import manager
 
 router = APIRouter(tags=["web_user"])
+
+KASPI_TEST_MIN_AMOUNT = 500
+KASPI_TEST_MAX_AMOUNT = 200_000
+MAX_REVIEW_COMMENT_LENGTH = 1000
 
 
 async def club_card_stats(db: AsyncSession, club_ids: list[int]):
@@ -25,11 +32,21 @@ async def club_card_stats(db: AsyncSession, club_ids: list[int]):
             select(models.Product).filter(models.Product.club_id == club_id)
         )
         products = res_products.scalars().all()
+        res_reviews = await db.execute(
+            select(
+                func.count(models.ClubReview.id),
+                func.coalesce(func.avg(models.ClubReview.rating), 0),
+            ).filter(models.ClubReview.club_id == club_id)
+        )
+        review_count, rating_avg = res_reviews.one()
         stats[club_id] = {
             "total": len(computers),
             "free": len([pc for pc in computers if pc.status == "free"]),
             "busy": len([pc for pc in computers if pc.status == "busy"]),
+            "reserved": len([pc for pc in computers if pc.status == "reserved"]),
             "products": len(products),
+            "review_count": review_count or 0,
+            "rating_avg": round(float(rating_avg or 0), 1),
         }
     return stats
 
@@ -63,6 +80,20 @@ async def lock_current_user(db: AsyncSession, user_id: int):
         .with_for_update()
     )
     return res.scalars().first()
+
+
+def normalize_review_comment(comment: str | None) -> str | None:
+    normalized = " ".join((comment or "").strip().split())
+    if not normalized:
+        return None
+    return normalized[:MAX_REVIEW_COMMENT_LENGTH]
+
+
+async def active_club_exists(db: AsyncSession, club_id: int) -> bool:
+    res = await db.execute(
+        select(models.Club.id).filter(models.Club.id == club_id, models.Club.status == "active")
+    )
+    return res.scalars().first() is not None
 
 @router.post("/book_seat/{pc_id}")
 async def book_seat(
@@ -261,6 +292,96 @@ async def buy_product(request: Request, product_id: int, db: AsyncSession = Depe
     await db.commit()
     return {"status": "success", "message": f"Заказ принят! Списано {product.price}₸"}
 
+
+@router.post("/payments/kaspi/test")
+async def kaspi_test_payment(
+    request: Request,
+    amount: int = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.enable_kaspi_test_payment:
+        return JSONResponse({"status": "error", "message": "Эндпоинт недоступен"}, status_code=404)
+    limited = await enforce_rate_limit(request, "kaspi_test", PAYMENT_LIMIT)
+    if limited:
+        return limited
+    current_user = await get_current_user(request, db)
+    if not current_user or not current_user.is_active:
+        return {"status": "error", "message": "Необходима авторизация"}
+    if amount < KASPI_TEST_MIN_AMOUNT or amount > KASPI_TEST_MAX_AMOUNT:
+        return {
+            "status": "error",
+            "message": f"Сумма тестовой оплаты должна быть от {KASPI_TEST_MIN_AMOUNT} до {KASPI_TEST_MAX_AMOUNT}₸",
+        }
+
+    user = await lock_current_user(db, current_user.id)
+    if not user:
+        return {"status": "error", "message": "Необходима авторизация"}
+
+    reference = f"KASPI-TEST-{uuid4().hex[:12].upper()}"
+    payment = models.PaymentTransaction(
+        user_id=user.id,
+        provider="kaspi_test",
+        amount=amount,
+        status="paid",
+        external_reference=reference,
+        paid_at=datetime.utcnow(),
+    )
+    db.add(payment)
+    await db.flush()
+    await credit_user_balance(
+        db,
+        user=user,
+        amount=amount,
+        kind="kaspi_test_top_up",
+        reason="Тестовая оплата Kaspi",
+        metadata={"payment_id": payment.id, "external_reference": reference, "provider": "kaspi_test"},
+    )
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Тестовая Kaspi-оплата прошла. Баланс пополнен на {amount}₸",
+        "balance": user.balance,
+        "reference": reference,
+    }
+
+
+@router.post("/clubs/{club_id}/review")
+async def submit_club_review(
+    club_id: int,
+    request: Request,
+    rating: int = Form(...),
+    comment: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+):
+    current_user = await get_current_user(request, db)
+    if not current_user or not current_user.is_active:
+        return RedirectResponse(url="/login", status_code=303)
+    if rating < 1 or rating > 5:
+        return HTMLResponse("Оценка должна быть от 1 до 5", status_code=400)
+    if not await active_club_exists(db, club_id):
+        return HTMLResponse("Клуб не найден", status_code=404)
+
+    res = await db.execute(
+        select(models.ClubReview).filter(
+            models.ClubReview.club_id == club_id,
+            models.ClubReview.user_id == current_user.id,
+        )
+    )
+    review = res.scalars().first()
+    if review:
+        review.rating = rating
+        review.comment = normalize_review_comment(comment)
+        review.updated_at = datetime.utcnow()
+    else:
+        db.add(models.ClubReview(
+            club_id=club_id,
+            user_id=current_user.id,
+            rating=rating,
+            comment=normalize_review_comment(comment),
+        ))
+    await db.commit()
+    return RedirectResponse(url=f"/club/{club_id}#reviews", status_code=303)
+
 @router.get("/user/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     current_user = await get_current_user(request, db)
@@ -303,12 +424,25 @@ async def club_detail(club_id: int, request: Request, db: AsyncSession = Depends
     # Загружаем пакеты (тарифы) для этого клуба
     res_pkgs = await db.execute(select(models.Package).filter(models.Package.club_id == club_id))
     packages = res_pkgs.scalars().all()
+    res_reviews = await db.execute(
+        select(models.ClubReview)
+        .options(selectinload(models.ClubReview.user))
+        .filter(models.ClubReview.club_id == club_id)
+        .order_by(models.ClubReview.updated_at.desc())
+    )
+    reviews = res_reviews.scalars().all()
+    rating_avg = round(sum(review.rating for review in reviews) / len(reviews), 1) if reviews else 0
+    current_user_review = next((review for review in reviews if current_user and review.user_id == current_user.id), None)
 
     return templates.TemplateResponse("club_detail.html", {
-        "request": request, 
-        "club": club, 
-        "computers": computers, 
+        "request": request,
+        "club": club,
+        "computers": computers,
         "products": products,
         "packages": packages,
-        "current_user": current_user
+        "reviews": reviews,
+        "rating_avg": rating_avg,
+        "current_user_review": current_user_review,
+        "current_user": current_user,
+        "kaspi_test_enabled": settings.enable_kaspi_test_payment,
     })

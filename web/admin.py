@@ -20,12 +20,14 @@ from core.finance import credit_user_balance
 from core.fraud import evaluate_admin_pc_override, evaluate_admin_top_up
 from core.integrations import check_integration, touch_integration_status, validate_integration_url
 from core.roles import CLUB_ADMIN_ROLES, ROLE_PENDING_OWNER, ROLE_SUPERADMIN, STAFF_ROLES
+from core.tenancy import can_manage_club, can_manage_order, can_manage_pc, manageable_club_ids
 from core.ws import issue_pc_token
 
 router = APIRouter(prefix="/admin", tags=["web_admin"])
 
 VALID_PC_STATUSES = {"free", "busy", "reserved"}
 VALID_PC_CATEGORIES = {"Standard", "VIP"}
+MAX_PACKAGE_DURATION_MINUTES = 24 * 60
 
 
 async def create_notification(db: AsyncSession, kind: str, title: str, message: str, club_id=None):
@@ -35,24 +37,18 @@ async def create_notification(db: AsyncSession, kind: str, title: str, message: 
 async def get_owner_clubs(db: AsyncSession, owner: models.User):
     res = await db.execute(
         select(models.Club)
-        .filter(models.Club.owner_id == owner.id, models.Club.status == "active")
+        .filter(models.Club.id.in_(await manageable_club_ids(db, owner)))
         .order_by(models.Club.name)
     )
     return res.scalars().all()
 
 
 async def owner_club_ids(db: AsyncSession, owner: models.User):
-    return [club.id for club in await get_owner_clubs(db, owner)]
+    return await manageable_club_ids(db, owner)
 
 
 async def ensure_owner_club(db: AsyncSession, owner: models.User, club_id: int):
-    return club_id in await owner_club_ids(db, owner)
-
-
-async def can_manage_pc(db: AsyncSession, user: models.User, pc: models.Computer) -> bool:
-    if user.role == ROLE_SUPERADMIN:
-        return True
-    return await ensure_owner_club(db, user, pc.club_id)
+    return await can_manage_club(db, owner, club_id)
 
 
 def normalize_text(value: str | None) -> str:
@@ -61,6 +57,10 @@ def normalize_text(value: str | None) -> str:
 
 def amount(value: int | None) -> int:
     return int(value or 0)
+
+
+def package_total_minutes(paid_minutes: int, bonus_minutes: int) -> int:
+    return paid_minutes + bonus_minutes
 
 
 def build_finance_summary(orders, bookings, expenses):
@@ -196,6 +196,7 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
     computers = []
     products = []
     bookings = []
+    packages = []
     expenses = []
     notifications = []
     integrations = {}
@@ -225,6 +226,14 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
         )
         products = res_products.scalars().all()
 
+        res_packages = await db.execute(
+            select(models.Package)
+            .options(selectinload(models.Package.club))
+            .filter(models.Package.club_id.in_(club_ids))
+            .order_by(models.Package.club_id, models.Package.pc_category, models.Package.price)
+        )
+        packages = res_packages.scalars().all()
+
         res_bookings = await db.execute(
             select(models.Booking)
             .options(selectinload(models.Booking.computer), selectinload(models.Booking.user))
@@ -244,7 +253,7 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
 
         res_notifications = await db.execute(
             select(models.Notification)
-            .filter(or_(models.Notification.club_id.in_(club_ids), models.Notification.club_id.is_(None)))
+            .filter(models.Notification.club_id.in_(club_ids))
             .order_by(models.Notification.created_at.desc())
             .limit(15)
         )
@@ -293,6 +302,7 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
         "orders": orders,
         "computers": computers,
         "products": products,
+        "packages": packages,
         "bookings": bookings,
         "expenses": expenses,
         "notifications": notifications,
@@ -422,23 +432,24 @@ async def update_computer_status(
         return RedirectResponse(url="/login", status_code=303)
     res = await db.execute(select(models.Computer).filter(models.Computer.id == pc_id))
     pc = res.scalars().first()
-    if pc and not await ensure_owner_club(db, current_user, pc.club_id):
+    if not pc:
+        return HTMLResponse("ПК не найден", status_code=404)
+    if not await can_manage_pc(db, current_user, pc):
         return HTMLResponse("Нет доступа к этому клубу", status_code=403)
     if status not in VALID_PC_STATUSES:
         return HTMLResponse("Неизвестный статус ПК", status_code=400)
-    if pc:
-        await evaluate_admin_pc_override(db, admin=current_user, pc=pc, new_status=status)
-        pc.status = status
-        if status == "free":
-            pc.current_user_id = None
-            pc.end_time = None
-            await db.execute(
-                update(models.Booking)
-                .filter(models.Booking.computer_id == pc.id, models.Booking.status == "active")
-                .values(status="completed")
-            )
-        await create_notification(db, "computer", "Статус ПК изменен", f"ПК #{pc.number}: {status}.", pc.club_id)
-        await db.commit()
+    await evaluate_admin_pc_override(db, admin=current_user, pc=pc, new_status=status)
+    pc.status = status
+    if status == "free":
+        pc.current_user_id = None
+        pc.end_time = None
+        await db.execute(
+            update(models.Booking)
+            .filter(models.Booking.computer_id == pc.id, models.Booking.status == "active")
+            .values(status="completed")
+        )
+    await create_notification(db, "computer", "Статус ПК изменен", f"ПК #{pc.number}: {status}.", pc.club_id)
+    await db.commit()
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -577,13 +588,14 @@ async def complete_order(order_id: int, request: Request, db: AsyncSession = Dep
         .filter(models.Order.id == order_id)
     )
     order = res.scalars().first()
-    if order and order.product and not await ensure_owner_club(db, current_user, order.product.club_id):
+    if not order:
+        return HTMLResponse("Заказ не найден", status_code=404)
+    if not await can_manage_order(db, current_user, order):
         return HTMLResponse("Нет доступа к этому заказу", status_code=403)
-    if order:
-        if order.status == "completed":
-            return RedirectResponse(url="/admin", status_code=303)
-        order.status = "completed"
-        await db.commit()
+    if order.status == "completed":
+        return RedirectResponse(url="/admin", status_code=303)
+    order.status = "completed"
+    await db.commit()
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -616,7 +628,8 @@ async def add_package(
     club_id: int = Form(...),
     name: str = Form(...),
     price: int = Form(...),
-    duration: int = Form(...),
+    paid_minutes: int = Form(...),
+    bonus_minutes: int = Form(0),
     category: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -628,13 +641,26 @@ async def add_package(
         return HTMLResponse("Название тарифа не может быть пустым", status_code=400)
     if price < 0:
         return HTMLResponse("Цена тарифа не может быть отрицательной", status_code=400)
-    if duration < 1:
-        return HTMLResponse("Длительность тарифа должна быть больше нуля", status_code=400)
+    if paid_minutes < 1:
+        return HTMLResponse("Оплаченные минуты должны быть больше нуля", status_code=400)
+    if bonus_minutes < 0:
+        return HTMLResponse("Бонусные минуты не могут быть отрицательными", status_code=400)
+    duration = package_total_minutes(paid_minutes, bonus_minutes)
+    if duration > MAX_PACKAGE_DURATION_MINUTES:
+        return HTMLResponse("Длительность тарифа не может быть больше 24 часов", status_code=400)
     if category not in VALID_PC_CATEGORIES:
         return HTMLResponse("Неизвестная категория ПК", status_code=400)
-    db.add(models.Package(name=package_name, price=price, duration_minutes=duration, pc_category=category, club_id=club_id))
+    db.add(models.Package(
+        name=package_name,
+        price=price,
+        duration_minutes=duration,
+        paid_minutes=paid_minutes,
+        bonus_minutes=bonus_minutes,
+        pc_category=category,
+        club_id=club_id,
+    ))
     await db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin#packages", status_code=303)
 
 
 @router.post("/integrations/1c")

@@ -57,6 +57,7 @@
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#shop">Товары</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#orders">Заказы</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#clubs">Клубы и игры</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#packages">Тарифы</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#finance">Финансы</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#ai">AI чат</a></li>
         </ul>
@@ -454,6 +455,61 @@
                                 <div class="text-secondary small">Сначала дождитесь одобрения клуба.</div>
                                 {% endfor %}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="tab-pane fade" id="packages">
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <div class="panel">
+                            <h5 class="mb-3">Тарифные пакеты</h5>
+                            <table class="table align-middle">
+                                <thead><tr><th>Клуб</th><th>Тариф</th><th>Категория</th><th>Время</th><th>Цена</th></tr></thead>
+                                <tbody>
+                                    {% for package in packages %}
+                                    <tr>
+                                        <td>{{ package.club.name if package.club else '-' }}</td>
+                                        <td>{{ package.name }}</td>
+                                        <td><span class="badge text-bg-dark border border-secondary">{{ package.pc_category }}</span></td>
+                                        <td>
+                                            {{ package.duration_minutes }} мин
+                                            {% if package.bonus_minutes %}
+                                            <span class="text-success small">({{ package.paid_minutes or (package.duration_minutes - package.bonus_minutes) }} + {{ package.bonus_minutes }})</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="fw-bold text-info">{{ package.price }} ₸</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="5" class="text-secondary">Тарифов пока нет.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel">
+                            <h5 class="mb-3">Создать тариф</h5>
+                            <form action="/admin/add_package" method="POST" class="row g-2">
+                                <div class="col-12">
+                                    <select name="club_id" class="form-select" required>
+                                        {% for club in clubs %}<option value="{{ club.id }}">{{ club.name }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-12"><input type="text" name="name" class="form-control" placeholder="Название: 2+1, Ночь VIP, 3 часа" required></div>
+                                <div class="col-6">
+                                    <select name="category" class="form-select" required>
+                                        <option value="Standard">Standard</option>
+                                        <option value="VIP">VIP</option>
+                                    </select>
+                                </div>
+                                <div class="col-6"><input type="number" name="price" class="form-control" placeholder="Цена ₸" min="0" required></div>
+                                <div class="col-6"><input type="number" name="paid_minutes" class="form-control" placeholder="Оплачено, мин" min="1" required></div>
+                                <div class="col-6"><input type="number" name="bonus_minutes" class="form-control" placeholder="Бонус, мин" min="0" value="0"></div>
+                                <div class="col-12 text-secondary small">Пример: пакет 2+1 = оплачено 120 мин, бонус 60 мин. Клиент платит указанную цену, а играет 180 мин.</div>
+                                <div class="col-12"><button type="submit" class="btn btn-neon w-100">Создать тариф</button></div>
+                            </form>
                         </div>
                     </div>
                 </div>

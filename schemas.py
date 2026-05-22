@@ -1,6 +1,8 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 
+from core.security import MIN_PASSWORD_LENGTH
+
 # --- Auth & User ---
 class UserBase(BaseModel):
     email: EmailStr
@@ -8,7 +10,7 @@ class UserBase(BaseModel):
     balance: int = 0
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH)
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -28,12 +30,16 @@ class PackageResponse(BaseModel):
     name: str
     price: int
     duration_minutes: int
+    paid_minutes: Optional[int] = None
+    bonus_minutes: int = 0
     pc_category: str
 
 class PackageCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     price: int = Field(..., ge=0)
     duration_minutes: int = Field(60, gt=0)
+    paid_minutes: Optional[int] = Field(None, gt=0)
+    bonus_minutes: int = Field(0, ge=0)
     pc_category: str = "Standard"
 
 # --- Club ---

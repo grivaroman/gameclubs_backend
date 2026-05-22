@@ -117,6 +117,7 @@ class Club(Base):
     computers = relationship("Computer")
     owner = relationship("User", back_populates="clubs")
     integration = relationship("ClubIntegration", back_populates="club", uselist=False, cascade="all, delete-orphan")
+    reviews = relationship("ClubReview", back_populates="club", cascade="all, delete-orphan")
 
 
 class Game(Base):
@@ -132,6 +133,8 @@ class Package(Base):
     __table_args__ = (
         CheckConstraint("price IS NULL OR price >= 0", name="ck_packages_price_non_negative"),
         CheckConstraint("duration_minutes IS NULL OR duration_minutes > 0", name="ck_packages_duration_positive"),
+        CheckConstraint("paid_minutes IS NULL OR paid_minutes > 0", name="ck_packages_paid_minutes_positive"),
+        CheckConstraint("bonus_minutes IS NULL OR bonus_minutes >= 0", name="ck_packages_bonus_minutes_non_negative"),
         Index("ix_packages_club_id", "club_id"),
     )
 
@@ -139,6 +142,8 @@ class Package(Base):
     name = Column(String)
     price = Column(Integer)
     duration_minutes = Column(Integer, default=60)
+    paid_minutes = Column(Integer, nullable=True)
+    bonus_minutes = Column(Integer, default=0)
     pc_category = Column(String)
     club_id = Column(Integer, ForeignKey("clubs.id"))
 
@@ -163,9 +168,11 @@ class User(Base):
     role = Column(String, default="user")
     balance = Column(Integer, default=0)
     is_active = Column(Integer, default=1)
+    tokens_invalid_before = Column(DateTime, nullable=True)
 
     orders = relationship("Order", back_populates="user")
     clubs = relationship("Club", back_populates="owner")
+    reviews = relationship("ClubReview", back_populates="user")
 
 
 class Order(Base):
@@ -296,3 +303,46 @@ class BalanceTransaction(Base):
     reason = Column(Text, nullable=True)
     metadata_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ClubReview(Base):
+    __tablename__ = "club_reviews"
+    __table_args__ = (
+        UniqueConstraint("club_id", "user_id", name="uq_club_reviews_club_user"),
+        CheckConstraint("rating >= 1 AND rating <= 5", name="ck_club_reviews_rating_range"),
+        Index("ix_club_reviews_club_id", "club_id"),
+        Index("ix_club_reviews_user_id", "user_id"),
+        Index("ix_club_reviews_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rating = Column(Integer, nullable=False)
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    club = relationship("Club", back_populates="reviews")
+    user = relationship("User", back_populates="reviews")
+
+
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_payment_transactions_amount_positive"),
+        CheckConstraint("status IN ('pending', 'paid', 'failed', 'cancelled')", name="ck_payment_transactions_status_valid"),
+        Index("ix_payment_transactions_user_id", "user_id"),
+        Index("ix_payment_transactions_provider", "provider"),
+        Index("ix_payment_transactions_status", "status"),
+        Index("ix_payment_transactions_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    provider = Column(String, nullable=False)
+    amount = Column(Integer, nullable=False)
+    status = Column(String, default="pending", nullable=False)
+    external_reference = Column(String, unique=True, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    paid_at = Column(DateTime, nullable=True)

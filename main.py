@@ -3,6 +3,7 @@ from datetime import datetime
 
 from api import router as api_router
 from config import settings
+from core.observability import get_logger, setup_logging, setup_sentry
 from core.roles import ROLE_SUPERADMIN
 from core.security import CSRFMiddleware, SecurityHeadersMiddleware, split_csv
 from core.ws import authenticate_pc_websocket, manager
@@ -15,6 +16,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from web import router as web_router
 
 import models
+
+setup_logging(level=settings.log_level, json_format=settings.log_json)
+setup_sentry(settings.sentry_dsn, environment=settings.environment, release=settings.release)
+logger = get_logger("gameclubs")
 
 app = FastAPI(title="CyberBooking System")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -100,42 +105,58 @@ async def bootstrap_superadmin():
         await db.commit()
 
 
-async def cleanup_expired_sessions():
-    """Фоновая задача: освобождает ПК, если время брони вышло."""
-    while True:
-        await asyncio.sleep(60)
-        async with models.SessionLocal() as db:
-            now = datetime.utcnow()
-            res = await db.execute(
-                select(models.Computer).filter(
-                    models.Computer.status == "busy",
-                    models.Computer.end_time <= now,
-                )
-            )
-            expired_pcs = res.scalars().all()
-            for pc in expired_pcs:
-                pc.status = "free"
-                pc.current_user_id = None
-                pc.end_time = None
-                await db.execute(
-                    update(models.Booking)
-                    .filter(models.Booking.computer_id == pc.id, models.Booking.status == "active")
-                    .values(status="expired")
-                )
-                db.add(models.Notification(
-                    kind="expired",
-                    club_id=pc.club_id,
-                    title="Время истекло",
-                    message=f"ПК #{pc.number}: время сессии завершилось.",
-                ))
-                try:
-                    await manager.send_command(pc.id, {"command": "lock"})
-                except Exception:
-                    pass
+CLEANUP_INTERVAL_SECONDS = 60
 
-            if expired_pcs:
-                await db.commit()
-                print(f">>> CLEANUP: Освобождено ПК: {len(expired_pcs)}")
+
+async def cleanup_expired_sessions_once() -> int:
+    """Одна итерация чистки: возвращает количество освобождённых ПК.
+
+    Изолировано от цикла, чтобы исключение в одной итерации не убивало супервизор —
+    см. cleanup_expired_sessions ниже.
+    """
+    async with models.SessionLocal() as db:
+        now = datetime.utcnow()
+        res = await db.execute(
+            select(models.Computer).filter(
+                models.Computer.status == "busy",
+                models.Computer.end_time <= now,
+            )
+        )
+        expired_pcs = res.scalars().all()
+        for pc in expired_pcs:
+            pc.status = "free"
+            pc.current_user_id = None
+            pc.end_time = None
+            await db.execute(
+                update(models.Booking)
+                .filter(models.Booking.computer_id == pc.id, models.Booking.status == "active")
+                .values(status="expired")
+            )
+            db.add(models.Notification(
+                kind="expired",
+                club_id=pc.club_id,
+                title="Время истекло",
+                message=f"ПК #{pc.number}: время сессии завершилось.",
+            ))
+            try:
+                await manager.send_command(pc.id, {"command": "lock"})
+            except Exception:
+                logger.exception("cleanup_ws_lock_failed", extra={"pc_id": pc.id})
+
+        if expired_pcs:
+            await db.commit()
+            logger.info("cleanup_expired_pcs", extra={"count": len(expired_pcs)})
+        return len(expired_pcs)
+
+
+async def cleanup_expired_sessions():
+    """Супервизор фоновой чистки: одна упавшая итерация не убивает цикл."""
+    while True:
+        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+        try:
+            await cleanup_expired_sessions_once()
+        except Exception:
+            logger.exception("cleanup_iteration_failed")
 
 
 @app.on_event("startup")

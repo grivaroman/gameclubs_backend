@@ -7,6 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from config import settings
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+MIN_PASSWORD_LENGTH = 10
 
 
 def split_csv(value: str | None) -> list[str]:
