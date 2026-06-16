@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 import models
-from core.finance import debit_user_balance
+from core.finance import credit_user_balance, debit_user_balance
 from core.fraud import evaluate_admin_pc_override, evaluate_booking_success, evaluate_failed_payment
 from core.services.access import user_can_manage_club
 from core.services.exceptions import (
@@ -32,6 +32,24 @@ class BookingResult:
 @dataclass
 class FreeSeatResult:
     pc_number: int
+    message: str
+
+
+@dataclass
+class BookingRequestResult:
+    booking_id: int
+    pc_number: int
+    mode: str
+    amount_charged: int
+    message: str
+
+
+@dataclass
+class BookingModerationResult:
+    booking_id: int
+    pc_number: int
+    status: str
+    refunded: int
     message: str
 
 
@@ -159,3 +177,175 @@ class BookingService:
 
         await safe_send_pc_command(pc.id, {"command": "lock"})
         return FreeSeatResult(pc_number=pc.number, message="Место успешно освобождено!")
+
+    async def create_booking_request(
+        self, *, user_id: int, pc_id: int, starts_at=None, ends_at=None
+    ) -> BookingRequestResult:
+        """Клиентская заявка на бронь (агрегатор).
+
+        Режим определяется клубом:
+          * 'request'  — бесплатная заявка, владелец подтверждает в админке;
+          * 'prepaid'  — при оформлении списывается депозит club.booking_deposit
+                         (возвращается, если владелец отклонит заявку).
+        ПК НЕ занимается до подтверждения — несколько заявок на одно место возможны.
+        """
+        user = await self._lock_active_user(user_id)
+
+        res = await self.db.execute(
+            select(models.Computer).filter(models.Computer.id == pc_id).with_for_update()
+        )
+        pc = res.scalars().first()
+        if not pc:
+            raise NotFoundError("Компьютер не найден")
+
+        res_club = await self.db.execute(
+            select(models.Club).filter(models.Club.id == pc.club_id, models.Club.status == "active")
+        )
+        club = res_club.scalars().first()
+        if not club:
+            raise ConflictError("Клуб сейчас недоступен для бронирования")
+
+        res_dup = await self.db.execute(
+            select(models.Booking.id).filter(
+                models.Booking.user_id == user.id,
+                models.Booking.computer_id == pc.id,
+                models.Booking.status == "pending",
+            )
+        )
+        if res_dup.scalars().first():
+            raise ConflictError("Вы уже отправили заявку на это место")
+
+        mode = club.booking_mode or "request"
+        deposit = (club.booking_deposit or 0) if mode == "prepaid" else 0
+        if deposit > 0 and user.balance < deposit:
+            raise InsufficientFundsError(f"Недостаточно средств для депозита. Нужно {deposit}₸")
+
+        booking = models.Booking(
+            user_id=user.id,
+            computer_id=pc.id,
+            amount_paid=0,
+            status="pending",
+            starts_at=starts_at or datetime.utcnow(),
+            ends_at=ends_at,
+        )
+        self.db.add(booking)
+        await self.db.flush()
+
+        if deposit > 0:
+            await debit_user_balance(
+                self.db,
+                user=user,
+                amount=deposit,
+                kind="booking_deposit",
+                club_id=club.id,
+                booking_id=booking.id,
+                reason="Депозит за бронь",
+                metadata={"pc_id": pc.id},
+            )
+            booking.amount_paid = deposit
+
+        self.db.add(models.Notification(
+            kind="booking",
+            club_id=club.id,
+            title="Новая заявка на бронь",
+            message=f"ПК #{pc.number}: заявка от клиента ({'депозит ' + str(deposit) + '₸' if deposit else 'без предоплаты'}).",
+        ))
+        await self.db.commit()
+
+        if deposit > 0:
+            message = f"Заявка на ПК #{pc.number} отправлена. Списан депозит {deposit}₸ (вернётся при отклонении)."
+        else:
+            message = f"Заявка на ПК #{pc.number} отправлена. Ожидайте подтверждения клуба."
+        return BookingRequestResult(
+            booking_id=booking.id,
+            pc_number=pc.number,
+            mode=mode,
+            amount_charged=deposit,
+            message=message,
+        )
+
+    async def confirm_request(self, *, actor: models.User, booking_id: int) -> BookingModerationResult:
+        """Владелец подтверждает заявку: бронь -> active, ПК занимается (если свободен)."""
+        res = await self.db.execute(
+            select(models.Booking).filter(models.Booking.id == booking_id).with_for_update()
+        )
+        booking = res.scalars().first()
+        if not booking:
+            raise NotFoundError("Заявка не найдена")
+
+        res_pc = await self.db.execute(
+            select(models.Computer).filter(models.Computer.id == booking.computer_id).with_for_update()
+        )
+        pc = res_pc.scalars().first()
+        if not pc or not await user_can_manage_club(self.db, actor, pc.club_id):
+            raise ForbiddenError("Нет доступа к этой заявке")
+        if booking.status != "pending":
+            raise ConflictError("Заявка уже обработана")
+
+        booking.status = "active"
+        if pc.status == "free":
+            pc.status = "busy"
+            pc.current_user_id = booking.user_id
+            pc.end_time = booking.ends_at
+
+        self.db.add(models.Notification(
+            kind="booking",
+            club_id=pc.club_id,
+            title="Заявка подтверждена",
+            message=f"Бронь ПК #{pc.number} подтверждена.",
+        ))
+        await self.db.commit()
+        return BookingModerationResult(
+            booking_id=booking.id, pc_number=pc.number, status="active", refunded=0,
+            message=f"Заявка на ПК #{pc.number} подтверждена.",
+        )
+
+    async def reject_request(self, *, actor: models.User, booking_id: int) -> BookingModerationResult:
+        """Владелец отклоняет заявку: бронь -> rejected, депозит (если был) возвращается."""
+        res = await self.db.execute(
+            select(models.Booking).filter(models.Booking.id == booking_id).with_for_update()
+        )
+        booking = res.scalars().first()
+        if not booking:
+            raise NotFoundError("Заявка не найдена")
+
+        res_pc = await self.db.execute(
+            select(models.Computer).filter(models.Computer.id == booking.computer_id)
+        )
+        pc = res_pc.scalars().first()
+        if not pc or not await user_can_manage_club(self.db, actor, pc.club_id):
+            raise ForbiddenError("Нет доступа к этой заявке")
+        if booking.status != "pending":
+            raise ConflictError("Заявка уже обработана")
+
+        refunded = 0
+        if booking.amount_paid and booking.amount_paid > 0:
+            res_user = await self.db.execute(
+                select(models.User).filter(models.User.id == booking.user_id).with_for_update()
+            )
+            target = res_user.scalars().first()
+            if target:
+                await credit_user_balance(
+                    self.db,
+                    user=target,
+                    amount=booking.amount_paid,
+                    kind="booking_refund",
+                    actor=actor,
+                    club_id=pc.club_id,
+                    booking_id=booking.id,
+                    reason="Возврат депозита за отклонённую бронь",
+                )
+                refunded = booking.amount_paid
+
+        booking.status = "rejected"
+        self.db.add(models.Notification(
+            kind="booking",
+            club_id=pc.club_id,
+            title="Заявка отклонена",
+            message=f"Бронь ПК #{pc.number} отклонена{' (депозит возвращён)' if refunded else ''}.",
+        ))
+        await self.db.commit()
+        return BookingModerationResult(
+            booking_id=booking.id, pc_number=pc.number, status="rejected", refunded=refunded,
+            message=f"Заявка на ПК #{pc.number} отклонена.",
+        )

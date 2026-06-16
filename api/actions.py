@@ -5,6 +5,8 @@ JSON API actions для мобильного приложения.
 доменные исключения (ServiceError) в HTTPException. Бизнес-логика — в
 core/services/*.
 """
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +27,11 @@ router = APIRouter(tags=["actions"])
 
 class BookSeatRequest(BaseModel):
     package_id: int
+
+
+class BookRequestBody(BaseModel):
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
 
 
 class KaspiTestRequest(BaseModel):
@@ -52,6 +59,25 @@ async def api_book_seat(
     try:
         result = await BookingService(db).book_seat(
             user_id=user.id, pc_id=pc_id, package_id=body.package_id
+        )
+    except ServiceError as error:
+        raise _as_http(error)
+    return schemas.ActionResponse(status="success", message=result.message)
+
+
+@router.post("/book_request/{pc_id}", response_model=schemas.ActionResponse)
+async def api_book_request(
+    pc_id: int,
+    body: BookRequestBody | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_current_user_api),
+):
+    """Заявка на бронь места (агрегатор). Режим (бесплатно/депозит) задаёт клуб."""
+    user = _require_user(current_user)
+    body = body or BookRequestBody()
+    try:
+        result = await BookingService(db).create_booking_request(
+            user_id=user.id, pc_id=pc_id, starts_at=body.starts_at, ends_at=body.ends_at
         )
     except ServiceError as error:
         raise _as_http(error)

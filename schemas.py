@@ -64,6 +64,8 @@ class ClubListResponse(BaseModel):
     photo_url: Optional[str] = None
     working_hours: Optional[str] = None
     description: Optional[str] = None
+    booking_mode: str = "request"
+    booking_deposit: int = 0
 
 class ClubResponse(BaseModel) :
     id: int
@@ -75,6 +77,8 @@ class ClubResponse(BaseModel) :
     working_hours: Optional[str] = None
     description: Optional[str] = None
     amenities: Optional[str] = None
+    booking_mode: str = "request"
+    booking_deposit: int = 0
     games: List[GameResponse] = Field(default_factory=list)
     packages: List[PackageResponse] = Field(default_factory=list)
 

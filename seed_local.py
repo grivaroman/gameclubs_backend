@@ -4,8 +4,8 @@
     python3 seed_local.py
 
 Создаёт (идемпотентно):
-  - владельца клуба:  owner@local.test / owner-local-12345  (role=admin)
-  - клиента:          client@local.test / client-local-12345 (role=user)
+  - владельца клуба:  owner@cyber.kz / owner-local-12345  (role=admin)
+  - клиента:          client@cyber.kz / client-local-12345 (role=user)
   - активный клуб с несколькими ПК и парой позиций меню
   - одну заявку на бронь (status=pending) и одну активную бронь — для вкладки «Заявки»
 """
@@ -40,8 +40,8 @@ async def get_or_create_user(db, email, password, role):
 
 async def main():
     async with models.SessionLocal() as db:
-        owner = await get_or_create_user(db, "owner@local.test", "owner-local-12345", "admin")
-        client = await get_or_create_user(db, "client@local.test", "client-local-12345", "user")
+        owner = await get_or_create_user(db, "owner@cyber.kz", "owner-local-12345", "admin")
+        client = await get_or_create_user(db, "client@cyber.kz", "client-local-12345", "user")
 
         res = await db.execute(select(models.Club).filter(models.Club.name == "Demo Club Almaty"))
         club = res.scalars().first()
@@ -57,6 +57,7 @@ async def main():
                 owner_id=owner.id,
                 status="active",
                 approved_at=datetime.utcnow(),
+                booking_mode="request",   # бесплатная заявка с подтверждением
             )
             db.add(club)
             await db.flush()
@@ -105,12 +106,40 @@ async def main():
                 ends_at=active_pc.end_time,
             ))
 
+        # Второй клуб — режим предоплаты (депозит списывается при заявке)
+        res2 = await db.execute(select(models.Club).filter(models.Club.name == "Demo Club VIP"))
+        club2 = res2.scalars().first()
+        if not club2:
+            club2 = models.Club(
+                name="Demo Club VIP",
+                address="пр. Достык, 5",
+                city="Алматы",
+                working_hours="24/7",
+                contact_phone="+7 700 111 11 11",
+                description="Демо-клуб с предоплатой брони (депозит 1000₸).",
+                amenities="VIP, PS5, бар",
+                owner_id=owner.id,
+                status="active",
+                approved_at=datetime.utcnow(),
+                booking_mode="prepaid",
+                booking_deposit=1000,
+            )
+            db.add(club2)
+            await db.flush()
+            for i in range(1, 5):
+                db.add(models.Computer(
+                    number=i,
+                    category="VIP" if i > 2 else "Standard",
+                    club_id=club2.id,
+                    status="free",
+                ))
+
         await db.commit()
 
     print("Сидинг готов.")
-    print("  Владелец (вход в /admin): owner@local.test / owner-local-12345")
-    print("  Клиент:                   client@local.test / client-local-12345")
-    print("  Суперадмин (/superadmin): admin@local.test / admin-local-12345")
+    print("  Владелец (вход в /admin): owner@cyber.kz / owner-local-12345")
+    print("  Клиент:                   client@cyber.kz / client-local-12345")
+    print("  Суперадмин (/superadmin): admin@cyber.kz / admin-local-12345")
 
 
 if __name__ == "__main__":

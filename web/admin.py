@@ -20,6 +20,8 @@ from core.finance import credit_user_balance
 from core.fraud import evaluate_admin_pc_override, evaluate_admin_top_up
 from core.integrations import check_integration, touch_integration_status, validate_integration_url
 from core.roles import CLUB_ADMIN_ROLES, ROLE_PENDING_OWNER, ROLE_SUPERADMIN, STAFF_ROLES
+from core.services.booking_service import BookingService
+from core.services.exceptions import ServiceError
 from core.tenancy import can_manage_club, can_manage_order, can_manage_pc, manageable_club_ids
 from core.ws import issue_pc_token
 
@@ -604,23 +606,10 @@ async def confirm_booking(booking_id: int, request: Request, db: AsyncSession = 
     current_user = await get_current_user(request, db)
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
-    res = await db.execute(select(models.Booking).filter(models.Booking.id == booking_id).with_for_update())
-    booking = res.scalars().first()
-    if not booking:
-        return HTMLResponse("Заявка не найдена", status_code=404)
-    res_pc = await db.execute(select(models.Computer).filter(models.Computer.id == booking.computer_id).with_for_update())
-    pc = res_pc.scalars().first()
-    if not pc or not await can_manage_pc(db, current_user, pc):
-        return HTMLResponse("Нет доступа к этой заявке", status_code=403)
-    if booking.status != "pending":
-        return RedirectResponse(url="/admin#requests", status_code=303)
-    booking.status = "active"
-    if pc.status == "free":
-        pc.status = "busy"
-        pc.current_user_id = booking.user_id
-        pc.end_time = booking.ends_at
-    await create_notification(db, "booking", "Заявка подтверждена", f"Бронь ПК #{pc.number} подтверждена.", pc.club_id)
-    await db.commit()
+    try:
+        await BookingService(db).confirm_request(actor=current_user, booking_id=booking_id)
+    except ServiceError as error:
+        return HTMLResponse(error.message, status_code=error.status_code)
     return RedirectResponse(url="/admin#requests", status_code=303)
 
 
@@ -629,19 +618,10 @@ async def reject_booking(booking_id: int, request: Request, db: AsyncSession = D
     current_user = await get_current_user(request, db)
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
-    res = await db.execute(select(models.Booking).filter(models.Booking.id == booking_id).with_for_update())
-    booking = res.scalars().first()
-    if not booking:
-        return HTMLResponse("Заявка не найдена", status_code=404)
-    res_pc = await db.execute(select(models.Computer).filter(models.Computer.id == booking.computer_id))
-    pc = res_pc.scalars().first()
-    if not pc or not await can_manage_pc(db, current_user, pc):
-        return HTMLResponse("Нет доступа к этой заявке", status_code=403)
-    if booking.status != "pending":
-        return RedirectResponse(url="/admin#requests", status_code=303)
-    booking.status = "rejected"
-    await create_notification(db, "booking", "Заявка отклонена", f"Бронь ПК #{pc.number} отклонена.", pc.club_id)
-    await db.commit()
+    try:
+        await BookingService(db).reject_request(actor=current_user, booking_id=booking_id)
+    except ServiceError as error:
+        return HTMLResponse(error.message, status_code=error.status_code)
     return RedirectResponse(url="/admin#requests", status_code=303)
 
 

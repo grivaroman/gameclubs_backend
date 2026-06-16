@@ -92,6 +92,14 @@ class Club(Base):
             "status IS NULL OR status IN ('pending', 'active', 'blocked', 'rejected')",
             name="ck_clubs_status_valid",
         ),
+        CheckConstraint(
+            "booking_mode IS NULL OR booking_mode IN ('request', 'prepaid')",
+            name="ck_clubs_booking_mode_valid",
+        ),
+        CheckConstraint(
+            "booking_deposit IS NULL OR booking_deposit >= 0",
+            name="ck_clubs_booking_deposit_non_negative",
+        ),
         Index("ix_clubs_owner_id", "owner_id"),
         Index("ix_clubs_status", "status"),
     )
@@ -105,6 +113,10 @@ class Club(Base):
     working_hours = Column(String, default="24/7")
     description = Column(Text)
     amenities = Column(Text)
+    # Как клуб принимает брони: 'request' — бесплатная заявка с подтверждением владельцем,
+    # 'prepaid' — списывается депозит booking_deposit при оформлении (возвращается при отклонении).
+    booking_mode = Column(String, default="request")
+    booking_deposit = Column(Integer, default=0)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(String, default="pending")
     moderation_comment = Column(Text, nullable=True)

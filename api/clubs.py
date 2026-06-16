@@ -23,6 +23,8 @@ def club_to_response(club: models.Club) -> ClubResponse:
         working_hours=club.working_hours,
         description=club.description,
         amenities=club.amenities,
+        booking_mode=club.booking_mode or "request",
+        booking_deposit=club.booking_deposit or 0,
         games=[GameResponse(id=g.id, name=g.name) for g in club.games],
         packages=[
             PackageResponse(
@@ -55,7 +57,9 @@ async def get_clubs(db: AsyncSession = Depends(get_db)):
             city=c.city,
             photo_url=c.photo_url,
             working_hours=c.working_hours,
-            description=c.description
+            description=c.description,
+            booking_mode=c.booking_mode or "request",
+            booking_deposit=c.booking_deposit or 0,
         ) for c in clubs
     ]
 
