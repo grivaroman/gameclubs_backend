@@ -6,7 +6,7 @@ from config import settings
 from core.observability import get_logger, setup_logging, setup_sentry
 from core.roles import ROLE_SUPERADMIN
 from core.security import CSRFMiddleware, SecurityHeadersMiddleware, split_csv
-from core.ws import authenticate_pc_websocket, manager
+from core.ws import authenticate_pc_websocket, manager, user_manager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from passlib.context import CryptContext
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -124,6 +124,7 @@ async def cleanup_expired_sessions_once() -> int:
         )
         expired_pcs = res.scalars().all()
         for pc in expired_pcs:
+            expired_user_id = pc.current_user_id
             pc.status = "free"
             pc.current_user_id = None
             pc.end_time = None
@@ -142,6 +143,13 @@ async def cleanup_expired_sessions_once() -> int:
                 await manager.send_command(pc.id, {"command": "lock"})
             except Exception:
                 logger.exception("cleanup_ws_lock_failed", extra={"pc_id": pc.id})
+            if expired_user_id:
+                await user_manager.send_event(expired_user_id, {
+                    "event": "session_expired",
+                    "pc_id": pc.id,
+                    "pc_number": pc.number,
+                    "message": f"Время на ПК #{pc.number} истекло.",
+                })
 
         if expired_pcs:
             await db.commit()
@@ -168,6 +176,46 @@ async def startup():
     await populate_base_games()
     await bootstrap_superadmin()
     asyncio.create_task(cleanup_expired_sessions())
+
+
+@app.websocket("/ws/user")
+async def websocket_user_endpoint(websocket: WebSocket):
+    """
+    WebSocket для мобильного приложения.
+    Auth: ?token=<jwt> или заголовок Authorization: Bearer <jwt>
+    События от сервера: {"event": "session_expired", "pc_id": ..., "message": ...}
+    """
+    from datetime import timezone
+    from jose import JWTError, jwt as jose_jwt
+    from core.roles import is_valid_role
+    from core.dependencies import _token_revoked
+
+    token = websocket.query_params.get("token") or websocket.headers.get("authorization", "").removeprefix("Bearer ")
+    user = None
+    if token:
+        try:
+            payload = jose_jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+            email = payload.get("sub")
+            if email:
+                async with models.SessionLocal() as db:
+                    from sqlalchemy.future import select as _select
+                    res = await db.execute(_select(models.User).filter(models.User.email == email))
+                    u = res.scalars().first()
+                    if u and u.is_active and is_valid_role(u.role) and not _token_revoked(u, payload):
+                        user = u
+        except JWTError:
+            pass
+
+    if not user:
+        await websocket.close(code=1008)
+        return
+
+    await user_manager.connect(user.id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        user_manager.disconnect(user.id)
 
 
 @app.websocket("/ws/pc/{pc_id}")

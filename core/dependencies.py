@@ -27,8 +27,16 @@ def _token_revoked(user: models.User, payload: dict) -> bool:
     return iat < invalid_before_ts
 
 
-async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
+def _extract_token(request: Request) -> str | None:
     token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    return token or None
+
+
+async def _user_from_token(token: str | None, db: AsyncSession) -> models.User | None:
     if not token:
         return None
     try:
@@ -40,10 +48,18 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
         return None
     res = await db.execute(select(models.User).filter(models.User.email == email))
     user = res.scalars().first()
-    if user and not user.is_active:
+    if not user or not user.is_active or not is_valid_role(user.role):
         return None
-    if user and not is_valid_role(user.role):
-        return None
-    if user and _token_revoked(user, payload):
+    if _token_revoked(user, payload):
         return None
     return user
+
+
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
+    """Cookie-only auth for web routes."""
+    return await _user_from_token(request.cookies.get("access_token"), db)
+
+
+async def get_current_user_api(request: Request, db: AsyncSession = Depends(get_db)):
+    """Cookie OR Bearer token auth for API routes."""
+    return await _user_from_token(_extract_token(request), db)

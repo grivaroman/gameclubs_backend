@@ -203,7 +203,7 @@ class Booking(Base):
     __table_args__ = (
         CheckConstraint("amount_paid IS NULL OR amount_paid >= 0", name="ck_bookings_amount_paid_non_negative"),
         CheckConstraint(
-            "status IS NULL OR status IN ('active', 'completed', 'expired', 'cancelled')",
+            "status IS NULL OR status IN ('pending', 'active', 'completed', 'expired', 'cancelled', 'rejected')",
             name="ck_bookings_status_valid",
         ),
         Index("ix_bookings_user_id", "user_id"),

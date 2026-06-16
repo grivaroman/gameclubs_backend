@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from schemas import ClubResponse, ClubCreate, ClubListResponse, GameResponse, PackageResponse
+from schemas import ClubResponse, ClubCreate, ClubListResponse, GameResponse, PackageResponse, ComputerResponse, ProductResponse
 import models
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
@@ -71,6 +71,36 @@ async def get_club(club_id: int, db: AsyncSession = Depends(get_db)):
     if not club:
         raise HTTPException(status_code=404, detail="Клуб не найден")
     return club_to_response(club)
+
+@router.get("/{club_id}/computers", response_model=list[ComputerResponse])
+async def get_club_computers(club_id: int, db: AsyncSession = Depends(get_db)):
+    """Список компьютеров клуба с их статусами"""
+    res = await db.execute(
+        select(models.Club.id).filter(models.Club.id == club_id, models.Club.status == "active")
+    )
+    if not res.scalars().first():
+        raise HTTPException(status_code=404, detail="Клуб не найден")
+    res_pc = await db.execute(
+        select(models.Computer)
+        .filter(models.Computer.club_id == club_id)
+        .order_by(models.Computer.number)
+    )
+    return res_pc.scalars().all()
+
+
+@router.get("/{club_id}/products", response_model=list[ProductResponse])
+async def get_club_products(club_id: int, db: AsyncSession = Depends(get_db)):
+    """Список товаров клуба"""
+    res = await db.execute(
+        select(models.Club.id).filter(models.Club.id == club_id, models.Club.status == "active")
+    )
+    if not res.scalars().first():
+        raise HTTPException(status_code=404, detail="Клуб не найден")
+    res_prod = await db.execute(
+        select(models.Product).filter(models.Product.club_id == club_id).order_by(models.Product.name)
+    )
+    return res_prod.scalars().all()
+
 
 @router.post("", response_model=ClubResponse)
 async def create_club(data: ClubCreate, db: AsyncSession = Depends(get_db)):

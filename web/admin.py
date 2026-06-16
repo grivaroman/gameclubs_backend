@@ -599,6 +599,52 @@ async def complete_order(order_id: int, request: Request, db: AsyncSession = Dep
     return RedirectResponse(url="/admin", status_code=303)
 
 
+@router.post("/bookings/{booking_id}/confirm")
+async def confirm_booking(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    current_user = await get_current_user(request, db)
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    res = await db.execute(select(models.Booking).filter(models.Booking.id == booking_id).with_for_update())
+    booking = res.scalars().first()
+    if not booking:
+        return HTMLResponse("Заявка не найдена", status_code=404)
+    res_pc = await db.execute(select(models.Computer).filter(models.Computer.id == booking.computer_id).with_for_update())
+    pc = res_pc.scalars().first()
+    if not pc or not await can_manage_pc(db, current_user, pc):
+        return HTMLResponse("Нет доступа к этой заявке", status_code=403)
+    if booking.status != "pending":
+        return RedirectResponse(url="/admin#requests", status_code=303)
+    booking.status = "active"
+    if pc.status == "free":
+        pc.status = "busy"
+        pc.current_user_id = booking.user_id
+        pc.end_time = booking.ends_at
+    await create_notification(db, "booking", "Заявка подтверждена", f"Бронь ПК #{pc.number} подтверждена.", pc.club_id)
+    await db.commit()
+    return RedirectResponse(url="/admin#requests", status_code=303)
+
+
+@router.post("/bookings/{booking_id}/reject")
+async def reject_booking(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    current_user = await get_current_user(request, db)
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    res = await db.execute(select(models.Booking).filter(models.Booking.id == booking_id).with_for_update())
+    booking = res.scalars().first()
+    if not booking:
+        return HTMLResponse("Заявка не найдена", status_code=404)
+    res_pc = await db.execute(select(models.Computer).filter(models.Computer.id == booking.computer_id))
+    pc = res_pc.scalars().first()
+    if not pc or not await can_manage_pc(db, current_user, pc):
+        return HTMLResponse("Нет доступа к этой заявке", status_code=403)
+    if booking.status != "pending":
+        return RedirectResponse(url="/admin#requests", status_code=303)
+    booking.status = "rejected"
+    await create_notification(db, "booking", "Заявка отклонена", f"Бронь ПК #{pc.number} отклонена.", pc.club_id)
+    await db.commit()
+    return RedirectResponse(url="/admin#requests", status_code=303)
+
+
 @router.post("/top_up_balance")
 async def top_up_balance(request: Request, user_id: int = Form(...), amount: int = Form(...), db: AsyncSession = Depends(get_db)):
     current_user = await get_current_user(request, db)

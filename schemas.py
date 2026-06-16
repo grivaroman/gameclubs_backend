@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 
@@ -89,3 +90,73 @@ class OrderResponse(BaseModel):
     amount_paid: int = 0
     status: str
     created_at: str
+
+
+# --- Mobile API schemas ---
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    role: str
+
+class UserMeResponse(BaseModel):
+    id: int
+    email: str
+    phone: Optional[str] = None
+    balance: int
+    role: str
+
+class ComputerResponse(BaseModel):
+    id: int
+    number: int
+    category: str
+    status: str
+    current_user_id: Optional[int] = None
+    end_time: Optional[datetime] = None
+    position_x: int = 0
+    position_y: int = 0
+
+class ProductResponse(BaseModel):
+    id: int
+    name: str
+    price: int
+    image_url: Optional[str] = None
+    club_id: int
+
+class BookingResponse(BaseModel):
+    id: int
+    computer_id: int
+    computer_number: Optional[int] = None
+    club_id: Optional[int] = None
+    club_name: Optional[str] = None
+    amount_paid: int
+    status: str
+    starts_at: datetime
+    ends_at: Optional[datetime] = None
+
+class OrderDetailResponse(BaseModel):
+    id: int
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
+    club_id: Optional[int] = None
+    club_name: Optional[str] = None
+    amount_paid: int
+    status: str
+    created_at: datetime
+
+class NotificationResponse(BaseModel):
+    id: int
+    kind: str
+    title: str
+    message: str
+    is_read: bool
+    created_at: datetime
+
+class ReviewCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=1000)
+
+class ActionResponse(BaseModel):
+    status: str
+    message: str

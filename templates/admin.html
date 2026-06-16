@@ -20,7 +20,6 @@
         .nav-tabs { border-color: #2f2f2f; }
         .nav-tabs .nav-link { color: #a0a0a0; border: none; border-bottom: 2px solid transparent; }
         .nav-tabs .nav-link.active { color: #0dcaf0; background: transparent; border-bottom-color: #0dcaf0; }
-        .game-box { background: #1c1c1c; border: 1px solid #333; border-radius: 8px; max-height: 190px; overflow-y: auto; padding: 14px; }
         .table { --bs-table-bg: transparent; --bs-table-color: #fff; --bs-table-border-color: #303030; }
         .pc-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 10px; }
         .pc-tile { border: 1px solid #3b3b3b; border-radius: 8px; padding: 10px; min-height: 86px; background: #202020; }
@@ -28,10 +27,6 @@
         .pc-busy { border-color: #dc3545; background: #251719; }
         .pc-reserved { border-color: #ffc107; background: #282315; }
         .notification { border-left: 3px solid #0dcaf0; background: #1d1d1d; border-radius: 8px; padding: 12px; }
-        .chat-log { height: 340px; overflow-y: auto; background: #101010; border: 1px solid #303030; border-radius: 8px; padding: 14px; }
-        .chat-msg { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; white-space: pre-wrap; }
-        .chat-user { background: #073642; margin-left: 36px; }
-        .chat-ai { background: #222; margin-right: 36px; }
         .chart-wrap { height: 260px; }
     </style>
 </head>
@@ -53,13 +48,12 @@
 
         <ul class="nav nav-tabs mb-4" id="adminTabs">
             <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#crm">CRM</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#computers">Компьютеры</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#shop">Товары</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#requests">Заявки</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#computers">Места и ПК</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#shop">Меню</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#orders">Заказы</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#clubs">Клубы и игры</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#packages">Тарифы</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#clubs">Клубы</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#finance">Финансы</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#ai">AI чат</a></li>
         </ul>
 
         <div class="tab-content">
@@ -84,7 +78,7 @@
                         </div>
                     </div>
                     <div class="col-lg-5">
-                        <div class="panel mb-3">
+                        <div class="panel">
                             <h5 class="mb-3">Уведомления</h5>
                             <div class="d-grid gap-2">
                                 {% for note in notifications %}
@@ -100,22 +94,59 @@
                                 {% endfor %}
                             </div>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="tab-pane fade" id="requests">
+                <div class="row g-3">
+                    <div class="col-lg-7">
                         <div class="panel">
-                            <h5 class="mb-3">Антифрод сигналы</h5>
+                            <h5 class="mb-3">Новые заявки на бронь</h5>
+                            <table class="table align-middle">
+                                <thead><tr><th>#</th><th>Клиент</th><th>Место</th><th>Время</th><th></th></tr></thead>
+                                <tbody>
+                                    {% for b in bookings if b.status == 'pending' %}
+                                    <tr>
+                                        <td>#{{ b.id }}</td>
+                                        <td>{{ b.user.email if b.user else 'Гость' }}</td>
+                                        <td>{% if b.computer %}ПК #{{ b.computer.number }}{% else %}—{% endif %}</td>
+                                        <td class="small text-secondary">
+                                            {{ b.starts_at.strftime('%d.%m %H:%M') if b.starts_at else '' }}
+                                            {% if b.ends_at %}– {{ b.ends_at.strftime('%H:%M') }}{% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="d-flex gap-2 justify-content-end">
+                                                <form action="/admin/bookings/{{ b.id }}/confirm" method="POST">
+                                                    <button class="btn btn-success btn-sm" type="submit">Подтвердить</button>
+                                                </form>
+                                                <form action="/admin/bookings/{{ b.id }}/reject" method="POST">
+                                                    <button class="btn btn-outline-danger btn-sm" type="submit">Отклонить</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="5" class="text-secondary">Новых заявок нет.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel">
+                            <h5 class="mb-3">Текущие брони</h5>
                             <div class="d-grid gap-2">
-                                {% for signal in fraud_signals %}
-                                <div class="notification">
-                                    <div class="d-flex justify-content-between gap-2">
-                                        <strong>{{ signal.event_type }}</strong>
-                                        <span class="badge {% if signal.severity == 'high' %}text-bg-danger{% elif signal.severity == 'medium' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">
-                                            {{ signal.score }}
-                                        </span>
+                                {% for b in bookings if b.status == 'active' %}
+                                <div class="border border-secondary rounded p-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <strong>{% if b.computer %}ПК #{{ b.computer.number }}{% else %}—{% endif %}</strong>
+                                        <span class="text-secondary small">{% if b.ends_at %}до {{ b.ends_at.strftime('%H:%M') }}{% endif %}</span>
                                     </div>
-                                    <div class="text-secondary small">{{ signal.reason }}</div>
-                                    <div class="text-secondary small">{{ signal.created_at.strftime('%d.%m %H:%M') }}</div>
+                                    <div class="text-secondary small">{{ b.user.email if b.user else 'Гость' }}</div>
                                 </div>
                                 {% else %}
-                                <div class="text-secondary">Подозрительных действий нет.</div>
+                                <div class="text-secondary small">Активных броней нет.</div>
                                 {% endfor %}
                             </div>
                         </div>
@@ -205,26 +236,29 @@
                                 <div class="pc-map">
                                     {% for pc in computers if pc.club_id == club.id %}
                                     <div class="pc-tile pc-{{ pc.status }}">
-                                        <div class="d-flex justify-content-between">
+                                        <div class="d-flex justify-content-between align-items-center">
                                             <strong>#{{ pc.number }}</strong>
-                                            <i class="bi bi-pc-display"></i>
+                                            <span class="badge text-bg-dark border border-secondary">{{ pc.category }}</span>
                                         </div>
-                                        <div class="small text-secondary">{{ pc.category }}</div>
+                                        {% if pc.status == 'busy' %}
+                                        <div class="small text-danger mt-1">занят{% if pc.end_time %} до {{ pc.end_time.strftime('%H:%M') }}{% endif %}</div>
+                                        {% elif pc.status == 'reserved' %}
+                                        <div class="small text-warning mt-1">забронирован</div>
+                                        {% else %}
+                                        <div class="small text-success mt-1">свободен</div>
+                                        {% endif %}
                                         <form action="/admin/update_computer_status" method="POST" class="mt-2">
                                             <input type="hidden" name="pc_id" value="{{ pc.id }}">
-                                            <select name="status" class="form-select form-select-sm mb-2">
-                                                <option value="free" {% if pc.status == 'free' %}selected{% endif %}>free</option>
-                                                <option value="busy" {% if pc.status == 'busy' %}selected{% endif %}>busy</option>
-                                                <option value="reserved" {% if pc.status == 'reserved' %}selected{% endif %}>reserved</option>
+                                            <select name="status" class="form-select form-select-sm mb-2" title="Технический статус места">
+                                                <option value="free" {% if pc.status == 'free' %}selected{% endif %}>свободен</option>
+                                                <option value="busy" {% if pc.status == 'busy' %}selected{% endif %}>занят</option>
+                                                <option value="reserved" {% if pc.status == 'reserved' %}selected{% endif %}>бронь</option>
                                             </select>
                                             <button class="btn btn-outline-info btn-sm w-100" type="submit">Сохранить</button>
                                         </form>
-                                        <form action="/admin/computers/{{ pc.id }}/issue_ws_token" method="POST" class="mt-2">
-                                            <button class="btn btn-outline-warning btn-sm w-100" type="submit">WS-токен</button>
-                                        </form>
                                     </div>
                                     {% else %}
-                                    <div class="text-secondary small">В этом клубе пока нет ПК.</div>
+                                    <div class="text-secondary small">В этом клубе пока нет мест.</div>
                                     {% endfor %}
                                 </div>
                             </div>
@@ -382,77 +416,31 @@
                                 <input type="text" name="contact_phone" class="form-control mb-2" placeholder="Телефон клуба">
                                 <textarea name="description" class="form-control mb-2" rows="3" placeholder="Описание клуба"></textarea>
                                 <textarea name="amenities" class="form-control mb-3" rows="3" placeholder="Что есть: VIP, PS5, напитки, снеки, турниры"></textarea>
-                                <label class="small text-secondary mb-2">Установленные игры</label>
-                                <div class="game-box mb-3">
-                                    <div class="d-flex flex-wrap gap-3">
-                                        {% for game in all_games %}
-                                        <div class="form-check">
-                                            <input class="form-check-input" type="checkbox" name="game_ids" value="{{ game.id }}" id="game_{{ game.id }}">
-                                            <label class="form-check-label" for="game_{{ game.id }}">{{ game.name }}</label>
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                </div>
                                 <button type="submit" class="btn btn-neon w-100">Создать клуб</button>
                             </form>
                         </div>
                     </div>
                     <div class="col-lg-5">
-                        <div class="panel mb-3">
-                            <h5 class="mb-3">Добавить игру</h5>
-                            <form action="/admin/add_game" method="POST" class="d-flex gap-2">
-                                <input type="text" name="name" class="form-control" placeholder="Название игры" required>
-                                <button type="submit" class="btn btn-neon px-4">Добавить</button>
-                            </form>
-                        </div>
                         <div class="panel">
-                            <h5 class="mb-3">Интеграция 1С</h5>
-                            <div class="d-grid gap-3">
+                            <h5 class="mb-3">Мои клубы</h5>
+                            <div class="d-grid gap-2">
                                 {% for club in clubs %}
-                                {% set integration = integrations.get(club.id) %}
                                 <div class="border border-secondary rounded p-3">
-                                    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                    <div class="d-flex justify-content-between align-items-center gap-2">
                                         <strong>{{ club.name }}</strong>
-                                        {% if integration and integration.last_status %}
-                                        <span class="badge text-bg-dark border border-info">{{ integration.last_status }}</span>
-                                        {% endif %}
+                                        <span class="badge {% if club.status == 'active' %}text-bg-success{% elif club.status == 'pending' %}text-bg-warning{% else %}text-bg-danger{% endif %}">{{ club.status }}</span>
                                     </div>
-                                    <form action="/admin/integrations/1c" method="POST" class="row g-2">
-                                        <input type="hidden" name="club_id" value="{{ club.id }}">
-                                        <div class="col-12">
-                                            <input type="url" name="base_url" class="form-control" placeholder="https://1c.example.kz/club-api/" value="{{ integration.base_url if integration else '' }}" required>
-                                        </div>
-                                        <div class="col-6">
-                                            <input type="text" name="username" class="form-control" placeholder="Логин 1С" value="{{ integration.username if integration and integration.username else '' }}">
-                                        </div>
-                                        <div class="col-6">
-                                            <input type="text" name="secret_env_key" class="form-control" placeholder="ENV ключ секрета" value="{{ integration.secret_env_key if integration and integration.secret_env_key else '' }}">
-                                        </div>
-                                        <div class="col-12">
-                                            <input type="text" name="health_path" class="form-control" placeholder="/hs/cyberbooking/ping" value="{{ integration.health_path if integration and integration.health_path else '/' }}">
-                                        </div>
-                                        <div class="col-12 d-flex flex-wrap gap-3 small">
-                                            <label class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="sync_products" value="1" {% if not integration or integration.sync_products %}checked{% endif %}> Товары
-                                            </label>
-                                            <label class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="sync_orders" value="1" {% if not integration or integration.sync_orders %}checked{% endif %}> Заказы
-                                            </label>
-                                            <label class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="sync_balances" value="1" {% if integration and integration.sync_balances %}checked{% endif %}> Балансы
-                                            </label>
-                                        </div>
-                                        <div class="col-7"><button type="submit" class="btn btn-neon w-100">Сохранить</button></div>
-                                    </form>
-                                    {% if integration %}
-                                    <form action="/admin/integrations/1c/test" method="POST" class="mt-2">
-                                        <input type="hidden" name="club_id" value="{{ club.id }}">
-                                        <button type="submit" class="btn btn-outline-info btn-sm w-100">Проверить подключение</button>
-                                    </form>
+                                    <div class="text-secondary small">{{ club.address }}{% if club.city %}, {{ club.city }}{% endif %}</div>
+                                    <div class="text-secondary small">
+                                        <i class="bi bi-clock"></i> {{ club.working_hours or '24/7' }}
+                                        {% if club.contact_phone %} · <i class="bi bi-telephone"></i> {{ club.contact_phone }}{% endif %}
+                                    </div>
+                                    {% if club.moderation_comment %}
+                                    <div class="text-warning small mt-1">{{ club.moderation_comment }}</div>
                                     {% endif %}
                                 </div>
                                 {% else %}
-                                <div class="text-secondary small">Сначала дождитесь одобрения клуба.</div>
+                                <div class="text-secondary small">У вас пока нет клубов. Создайте первый слева.</div>
                                 {% endfor %}
                             </div>
                         </div>
@@ -460,85 +448,6 @@
                 </div>
             </section>
 
-            <section class="tab-pane fade" id="packages">
-                <div class="row g-3">
-                    <div class="col-lg-7">
-                        <div class="panel">
-                            <h5 class="mb-3">Тарифные пакеты</h5>
-                            <table class="table align-middle">
-                                <thead><tr><th>Клуб</th><th>Тариф</th><th>Категория</th><th>Время</th><th>Цена</th></tr></thead>
-                                <tbody>
-                                    {% for package in packages %}
-                                    <tr>
-                                        <td>{{ package.club.name if package.club else '-' }}</td>
-                                        <td>{{ package.name }}</td>
-                                        <td><span class="badge text-bg-dark border border-secondary">{{ package.pc_category }}</span></td>
-                                        <td>
-                                            {{ package.duration_minutes }} мин
-                                            {% if package.bonus_minutes %}
-                                            <span class="text-success small">({{ package.paid_minutes or (package.duration_minutes - package.bonus_minutes) }} + {{ package.bonus_minutes }})</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="fw-bold text-info">{{ package.price }} ₸</td>
-                                    </tr>
-                                    {% else %}
-                                    <tr><td colspan="5" class="text-secondary">Тарифов пока нет.</td></tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="col-lg-5">
-                        <div class="panel">
-                            <h5 class="mb-3">Создать тариф</h5>
-                            <form action="/admin/add_package" method="POST" class="row g-2">
-                                <div class="col-12">
-                                    <select name="club_id" class="form-select" required>
-                                        {% for club in clubs %}<option value="{{ club.id }}">{{ club.name }}</option>{% endfor %}
-                                    </select>
-                                </div>
-                                <div class="col-12"><input type="text" name="name" class="form-control" placeholder="Название: 2+1, Ночь VIP, 3 часа" required></div>
-                                <div class="col-6">
-                                    <select name="category" class="form-select" required>
-                                        <option value="Standard">Standard</option>
-                                        <option value="VIP">VIP</option>
-                                    </select>
-                                </div>
-                                <div class="col-6"><input type="number" name="price" class="form-control" placeholder="Цена ₸" min="0" required></div>
-                                <div class="col-6"><input type="number" name="paid_minutes" class="form-control" placeholder="Оплачено, мин" min="1" required></div>
-                                <div class="col-6"><input type="number" name="bonus_minutes" class="form-control" placeholder="Бонус, мин" min="0" value="0"></div>
-                                <div class="col-12 text-secondary small">Пример: пакет 2+1 = оплачено 120 мин, бонус 60 мин. Клиент платит указанную цену, а играет 180 мин.</div>
-                                <div class="col-12"><button type="submit" class="btn btn-neon w-100">Создать тариф</button></div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="tab-pane fade" id="ai">
-                <div class="row g-3">
-                    <div class="col-lg-8">
-                        <div class="panel">
-                            <h5 class="mb-3">AI помощник администратора</h5>
-                            <div class="chat-log mb-3" id="chatLog">
-                                <div class="chat-msg chat-ai">Готов помочь по проекту, заказам, местам и товарам.</div>
-                            </div>
-                            <form id="chatForm" class="d-flex gap-2">
-                                <input id="chatInput" class="form-control" placeholder="Например: что сейчас с загрузкой зала?" autocomplete="off">
-                                <button class="btn btn-neon" type="submit"><i class="bi bi-send"></i></button>
-                            </form>
-                        </div>
-                    </div>
-                    <div class="col-lg-4">
-                        <div class="panel">
-                            <h5 class="mb-3">Контекст</h5>
-                            <div class="text-secondary small">
-                                Чат получает сводку проекта, модели данных и текущую статистику из базы. Ключ Groq должен лежать в переменной окружения <code>GROQ_API_KEY</code>.
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
         </div>
     </main>
 
@@ -575,39 +484,11 @@
         mountFinanceChart('financeChart');
         mountFinanceChart('financeDetailChart');
 
-        const chatForm = document.getElementById('chatForm');
-        const chatInput = document.getElementById('chatInput');
-        const chatLog = document.getElementById('chatLog');
-
-        function appendMessage(text, type) {
-            const node = document.createElement('div');
-            node.className = `chat-msg ${type === 'user' ? 'chat-user' : 'chat-ai'}`;
-            node.textContent = text;
-            chatLog.appendChild(node);
-            chatLog.scrollTop = chatLog.scrollHeight;
-            return node;
+        // Открыть вкладку, на которую указывает #hash (после редиректов из форм)
+        if (window.location.hash) {
+            const trigger = document.querySelector(`#adminTabs a[href="${window.location.hash}"]`);
+            if (trigger) new bootstrap.Tab(trigger).show();
         }
-
-        chatForm.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const message = chatInput.value.trim();
-            if (!message) return;
-            appendMessage(message, 'user');
-            chatInput.value = '';
-            const loading = appendMessage('Думаю...', 'ai');
-
-            try {
-                const response = await fetch('/admin/ai_chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message })
-                });
-                const data = await response.json();
-                loading.textContent = data.answer || 'Ответ не получен.';
-            } catch (error) {
-                loading.textContent = 'Не удалось отправить запрос к AI.';
-            }
-        });
     </script>
 </body>
 </html>

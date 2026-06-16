@@ -63,3 +63,36 @@ async def authenticate_pc_websocket(db: AsyncSession, pc_id: int, token: str | N
 
 
 manager = ConnectionManager()
+
+
+async def safe_send_pc_command(pc_id: int, message: dict) -> None:
+    """Отправка команды ПК без падения вызывающего кода при ошибке сокета."""
+    try:
+        await manager.send_command(pc_id, message)
+    except Exception:
+        pass
+
+
+class UserConnectionManager:
+    """WebSocket соединения для пользователей мобильного приложения."""
+
+    def __init__(self):
+        self.connections: dict[int, WebSocket] = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        self.connections[user_id] = websocket
+
+    def disconnect(self, user_id: int):
+        self.connections.pop(user_id, None)
+
+    async def send_event(self, user_id: int, event: dict):
+        ws = self.connections.get(user_id)
+        if ws:
+            try:
+                await ws.send_json(event)
+            except Exception:
+                self.disconnect(user_id)
+
+
+user_manager = UserConnectionManager()

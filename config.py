@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     superadmin_email: str | None = None
     superadmin_password: str | None = None
 
+    # --- Business rules (вынесены из сервисов, настраиваются через env) ---
+    kaspi_test_min_amount: int = 500
+    kaspi_test_max_amount: int = 200_000
+    max_review_comment_length: int = 1000
+    max_booking_duration_minutes: int = 1440  # 24 часа
+    history_page_size: int = 50
+    notifications_page_size: int = 100
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"

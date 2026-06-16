@@ -59,6 +59,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 class CSRFMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if settings.csrf_protection_enabled and request.method in UNSAFE_METHODS:
-            if not is_same_site_request(request):
+            # /api/ endpoints use Bearer tokens — CSRF via cookies cannot be set
+            # cross-origin with custom headers, so no CSRF check needed there.
+            if not request.url.path.startswith("/api/") and not is_same_site_request(request):
                 return PlainTextResponse("CSRF validation failed", status_code=403)
         return await call_next(request)
