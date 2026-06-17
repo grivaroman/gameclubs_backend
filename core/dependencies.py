@@ -27,13 +27,13 @@ def _token_revoked(user: models.User, payload: dict) -> bool:
     return iat < invalid_before_ts
 
 
-def _extract_token(request: Request) -> str | None:
-    token = request.cookies.get("access_token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-    return token or None
+def _bearer_token(request: Request) -> str | None:
+    """Токен ТОЛЬКО из заголовка Authorization: Bearer. Cookie сознательно
+    не принимаем для API."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:] or None
+    return None
 
 
 async def _user_from_token(token: str | None, db: AsyncSession) -> models.User | None:
@@ -61,5 +61,11 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
 
 
 async def get_current_user_api(request: Request, db: AsyncSession = Depends(get_db)):
-    """Cookie OR Bearer token auth for API routes."""
-    return await _user_from_token(_extract_token(request), db)
+    """Bearer-only auth for API routes.
+
+    Cookie НЕ принимается намеренно: /api/* освобождён от CSRF в CSRFMiddleware,
+    а это допустимо ТОЛЬКО если запрос не несёт ambient cookie-аутентификацию.
+    Если бы /api читал access_token из cookie, залогиненного в браузере юзера
+    можно было бы через cross-site POST заставить дёрнуть денежную ручку (CSRF).
+    """
+    return await _user_from_token(_bearer_token(request), db)

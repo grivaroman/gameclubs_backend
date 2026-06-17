@@ -6,6 +6,7 @@ import models
 import schemas
 from core.dependencies import get_db, get_current_user_api
 from core.roles import CLUB_ADMIN_ROLES, ROLE_SUPERADMIN
+from core.services.access import user_can_manage_club
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -70,12 +71,24 @@ async def mark_notification_read(
     if not current_user:
         raise HTTPException(status_code=401, detail="Необходима авторизация")
 
+    # Уведомления — для персонала клуба. Обычный игрок их даже не видит в списке,
+    # поэтому помечать прочитанным он ничего не должен.
+    if current_user.role not in CLUB_ADMIN_ROLES and current_user.role != ROLE_SUPERADMIN:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
     res = await db.execute(
         select(models.Notification).filter(models.Notification.id == notification_id)
     )
     notification = res.scalars().first()
     if not notification:
         raise HTTPException(status_code=404, detail="Уведомление не найдено")
+
+    # Tenancy: владелец может трогать только уведомления своих клубов (IDOR → 403).
+    if current_user.role != ROLE_SUPERADMIN:
+        if notification.club_id is None or not await user_can_manage_club(
+            db, current_user, notification.club_id
+        ):
+            raise HTTPException(status_code=403, detail="Нет доступа к этому уведомлению")
 
     notification.is_read = 1
     await db.commit()

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from jose import jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,7 @@ from sqlalchemy.future import select
 import models
 import schemas
 from config import settings
+from core.ratelimit import LOGIN_LIMIT, REGISTER_LIMIT, enforce_rate_limit
 from core.roles import ROLE_USER
 
 router = APIRouter(tags=["auth"])
@@ -31,7 +32,10 @@ def _create_access_token(email: str) -> str:
 
 
 @router.post("/register")
-async def register_user(data: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
+async def register_user(request: Request, data: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
+    limited = await enforce_rate_limit(request, "api_register", REGISTER_LIMIT)
+    if limited:
+        return limited
     email = data.email.strip().lower()
     phone = data.phone.strip() if data.phone else None
     res = await db.execute(select(models.User).filter(models.User.email == email))
@@ -54,7 +58,15 @@ async def register_user(data: schemas.UserCreate, db: AsyncSession = Depends(get
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
-async def api_login(data: schemas.LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+async def api_login(
+    request: Request,
+    data: schemas.LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    limited = await enforce_rate_limit(request, "api_login", LOGIN_LIMIT)
+    if limited:
+        return limited
     email = data.email.strip().lower()
     res = await db.execute(select(models.User).filter(models.User.email == email))
     user = res.scalars().first()
