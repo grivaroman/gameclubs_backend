@@ -5,11 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 import models
-from core.finance import debit_user_balance
+from core.finance import credit_user_balance, debit_user_balance
 from core.fraud import evaluate_failed_payment, evaluate_order_success
+from core.services.access import user_can_manage_club
 from core.services.exceptions import (
     AuthRequiredError,
     ConflictError,
+    ForbiddenError,
     InsufficientFundsError,
     NotFoundError,
     ValidationError,
@@ -20,6 +22,13 @@ from core.services.exceptions import (
 class OrderResult:
     order_id: int
     amount_paid: int
+    message: str
+
+
+@dataclass
+class OrderCancelResult:
+    order_id: int
+    refunded: int
     message: str
 
 
@@ -102,3 +111,57 @@ class OrderService:
             amount_paid=product.price,
             message=f"Заказ принят! Списано {product.price}₸",
         )
+
+    async def cancel_order(self, *, actor: models.User, order_id: int) -> OrderCancelResult:
+        """M4: владелец клуба/суперадмин отменяет заказ и возвращает деньги покупателю.
+
+        Идемпотентно (повторная отмена → 0 возврата). Выполненный заказ
+        (status='completed') отменить с возвратом нельзя.
+        """
+        res = await self.db.execute(
+            select(models.Order).filter(models.Order.id == order_id).with_for_update()
+        )
+        order = res.scalars().first()
+        if not order:
+            raise NotFoundError("Заказ не найден")
+
+        res_prod = await self.db.execute(
+            select(models.Product).filter(models.Product.id == order.product_id)
+        )
+        product = res_prod.scalars().first()
+        if not product or not await user_can_manage_club(self.db, actor, product.club_id):
+            raise ForbiddenError("Нет доступа к этому заказу")
+
+        if order.status == "cancelled":
+            return OrderCancelResult(order_id=order.id, refunded=0, message="Заказ уже отменён")
+        if order.status == "completed":
+            raise ConflictError("Заказ уже выполнен — отмена с возвратом недоступна")
+
+        refunded = 0
+        if order.amount_paid and order.amount_paid > 0 and order.user_id:
+            res_user = await self.db.execute(
+                select(models.User).filter(models.User.id == order.user_id).with_for_update()
+            )
+            buyer = res_user.scalars().first()
+            if buyer:
+                await credit_user_balance(
+                    self.db,
+                    user=buyer,
+                    amount=order.amount_paid,
+                    kind="order_refund",
+                    actor=actor,
+                    club_id=product.club_id,
+                    order_id=order.id,
+                    reason="Возврат за отменённый заказ",
+                )
+                refunded = order.amount_paid
+
+        order.status = "cancelled"
+        self.db.add(models.Notification(
+            kind="order",
+            club_id=product.club_id,
+            title="Заказ отменён",
+            message=f"Заказ #{order.id} отменён{' (деньги возвращены)' if refunded else ''}.",
+        ))
+        await self.db.commit()
+        return OrderCancelResult(order_id=order.id, refunded=refunded, message="Заказ отменён.")

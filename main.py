@@ -116,11 +116,14 @@ async def cleanup_expired_sessions_once() -> int:
     """
     async with models.SessionLocal() as db:
         now = datetime.utcnow()
+        # R5: берём истёкшие ПК под FOR UPDATE skip_locked — чтобы не гоняться с
+        # действиями владельца (update_computer_status / confirm_request) и не
+        # перетереть только что занятый ПК. skip_locked пропускает залоченные строки.
         res = await db.execute(
             select(models.Computer).filter(
                 models.Computer.status == "busy",
                 models.Computer.end_time <= now,
-            )
+            ).with_for_update(skip_locked=True)
         )
         expired_pcs = res.scalars().all()
         for pc in expired_pcs:
