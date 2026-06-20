@@ -379,4 +379,23 @@ class RefreshToken(Base):
     last_used_at = Column(DateTime, nullable=True)
     user_agent = Column(String, nullable=True)
     created_ip = Column(String, nullable=True)
+
+
+class IdempotencyKey(Base):
+    """Идемпотентность денежных POST-действий. Клиент шлёт заголовок
+    Idempotency-Key; повторный запрос с тем же ключом возвращает сохранённый
+    ответ, не выполняя действие дважды. Уникальность (user_id, idem_key)
+    гарантирует однократное выполнение даже при гонке параллельных запросов."""
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idem_key", name="uq_idempotency_user_key"),
+        Index("ix_idempotency_keys_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    idem_key = Column(String, nullable=False)
+    status = Column(String, default="in_progress", nullable=False)  # in_progress | completed
+    response_body = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     paid_at = Column(DateTime, nullable=True)
