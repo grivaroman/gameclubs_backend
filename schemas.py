@@ -111,6 +111,10 @@ class RefreshRequest(BaseModel):
 class LogoutRequest(BaseModel):
     refresh_token: Optional[str] = None
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=MIN_PASSWORD_LENGTH)
+
 class UserMeResponse(BaseModel):
     id: int
     email: str

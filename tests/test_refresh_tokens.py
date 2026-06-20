@@ -86,6 +86,40 @@ class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out.status_code, 200)
         self.assertEqual(self.client.post("/api/refresh", json={"refresh_token": r}).status_code, 401)
 
+    # --- change password / logout-all ---
+    def _bearer(self, access):
+        return {"Authorization": f"Bearer {access}"}
+
+    async def test_change_password_wrong_current_401(self):
+        access = self._login().json()["access_token"]
+        r = self.client.post("/api/change_password",
+                             json={"current_password": "WRONG_pass99", "new_password": "newpassword12"},
+                             headers=self._bearer(access))
+        self.assertEqual(r.status_code, 401)
+
+    async def test_change_password_revokes_all_sessions(self):
+        body = self._login().json()
+        access, refresh = body["access_token"], body["refresh_token"]
+        r = self.client.post("/api/change_password",
+                             json={"current_password": "password1234", "new_password": "newpassword12"},
+                             headers=self._bearer(access))
+        self.assertEqual(r.status_code, 200, r.text)
+        # старый access и refresh мертвы
+        self.assertEqual(self.client.get("/api/me", headers=self._bearer(access)).status_code, 401)
+        self.assertEqual(self.client.post("/api/refresh", json={"refresh_token": refresh}).status_code, 401)
+        # вход по старому паролю не работает, по новому — да
+        self.assertEqual(self.client.post("/api/login", json={"email": "p@x.com", "password": "password1234"}).status_code, 401)
+        self.assertEqual(self.client.post("/api/login", json={"email": "p@x.com", "password": "newpassword12"}).status_code, 200)
+
+    async def test_logout_all_revokes_sessions(self):
+        body = self._login().json()
+        access, refresh = body["access_token"], body["refresh_token"]
+        self.assertEqual(self.client.get("/api/me", headers=self._bearer(access)).status_code, 200)
+        out = self.client.post("/api/logout_all", headers=self._bearer(access))
+        self.assertEqual(out.status_code, 200, out.text)
+        self.assertEqual(self.client.get("/api/me", headers=self._bearer(access)).status_code, 401)
+        self.assertEqual(self.client.post("/api/refresh", json={"refresh_token": refresh}).status_code, 401)
+
     async def test_expired_refresh_rejected(self):
         r = self._login().json()["refresh_token"]
         # Состариваем токен за пределы срока.

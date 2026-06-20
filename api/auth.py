@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +11,11 @@ from core.api_tokens import (
     access_token_expires_in_seconds,
     create_mobile_access_token,
     issue_refresh_token,
+    revoke_all_user_refresh_tokens,
     revoke_refresh_token,
     rotate_refresh_token,
 )
+from core.dependencies import get_current_user_api
 from core.ratelimit import LOGIN_LIMIT, REGISTER_LIMIT, client_ip, enforce_rate_limit
 from core.roles import ROLE_USER
 
@@ -102,3 +106,50 @@ async def api_logout(data: schemas.LogoutRequest, db: AsyncSession = Depends(get
         await revoke_refresh_token(db, data.refresh_token)
         await db.commit()
     return {"message": "Выход выполнен"}
+
+
+async def _lock_self(db: AsyncSession, user_id: int) -> models.User | None:
+    res = await db.execute(select(models.User).filter(models.User.id == user_id).with_for_update())
+    return res.scalars().first()
+
+
+@router.post("/change_password")
+async def api_change_password(
+    data: schemas.PasswordChangeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_current_user_api),
+):
+    """Смена пароля. Завершает ВСЕ сессии (access + refresh) — нужен повторный вход."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
+    user = await _lock_self(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
+
+    if not pwd_context.verify(data.current_password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Текущий пароль неверен")
+    if data.new_password == data.current_password:
+        raise HTTPException(status_code=400, detail="Новый пароль должен отличаться от текущего")
+
+    user.hashed_password = pwd_context.hash(data.new_password)
+    user.tokens_invalid_before = datetime.utcnow()   # глушит существующие access-JWT
+    await revoke_all_user_refresh_tokens(db, user.id)  # и все refresh
+    await db.commit()
+    return {"message": "Пароль изменён. Войдите заново."}
+
+
+@router.post("/logout_all")
+async def api_logout_all(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_current_user_api),
+):
+    """Выход со всех устройств: глушит все access-JWT и отзывает все refresh-токены."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
+    user = await _lock_self(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
+    user.tokens_invalid_before = datetime.utcnow()
+    await revoke_all_user_refresh_tokens(db, user.id)
+    await db.commit()
+    return {"message": "Все сессии завершены"}
