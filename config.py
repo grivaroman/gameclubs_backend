@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     max_booking_duration_minutes: int = 1440  # 24 часа
     history_page_size: int = 50
     notifications_page_size: int = 100
+    # Mobile API: короткий access-JWT + длинный отзываемый refresh-токен.
+    mobile_access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
 
     @property
     def is_production(self) -> bool:

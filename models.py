@@ -357,4 +357,26 @@ class PaymentTransaction(Base):
     status = Column(String, default="pending", nullable=False)
     external_reference = Column(String, unique=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RefreshToken(Base):
+    """Refresh-токен мобильного API. В БД хранится только sha256 сырого токена
+    (как ws_token_hash у Computer) — утечка дампа не раскрывает действующие токены.
+    Ротация: при /api/refresh старая запись получает revoked_at, выдаётся новая.
+    Повторное предъявление отозванного токена = reuse → отзыв всей семьи юзера."""
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index("ix_refresh_tokens_user_id", "user_id"),
+        Index("ix_refresh_tokens_expires_at", "expires_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    issued_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    user_agent = Column(String, nullable=True)
+    created_ip = Column(String, nullable=True)
     paid_at = Column(DateTime, nullable=True)

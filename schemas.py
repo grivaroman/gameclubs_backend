@@ -100,9 +100,16 @@ class OrderResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
-    expires_in: int
+    expires_in: int            # секунды жизни access-токена
     role: str
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = None
 
 class UserMeResponse(BaseModel):
     id: int

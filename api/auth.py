@@ -1,15 +1,18 @@
-from datetime import datetime, timedelta, timezone
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from jose import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 import models
 import schemas
-from config import settings
-from core.ratelimit import LOGIN_LIMIT, REGISTER_LIMIT, enforce_rate_limit
+from core.api_tokens import (
+    access_token_expires_in_seconds,
+    create_mobile_access_token,
+    issue_refresh_token,
+    revoke_refresh_token,
+    rotate_refresh_token,
+)
+from core.ratelimit import LOGIN_LIMIT, REGISTER_LIMIT, client_ip, enforce_rate_limit
 from core.roles import ROLE_USER
 
 router = APIRouter(tags=["auth"])
@@ -19,16 +22,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 async def get_db():
     async with models.SessionLocal() as db:
         yield db
-
-
-def _create_access_token(email: str) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": email,
-        "iat": int(now.timestamp()),
-        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
-    }
-    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
 @router.post("/register")
@@ -58,12 +51,7 @@ async def register_user(request: Request, data: schemas.UserCreate, db: AsyncSes
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
-async def api_login(
-    request: Request,
-    data: schemas.LoginRequest,
-    response: Response,
-    db: AsyncSession = Depends(get_db),
-):
+async def api_login(request: Request, data: schemas.LoginRequest, db: AsyncSession = Depends(get_db)):
     limited = await enforce_rate_limit(request, "api_login", LOGIN_LIMIT)
     if limited:
         return limited
@@ -73,24 +61,44 @@ async def api_login(
     if not user or not user.is_active or not pwd_context.verify(data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
-    token = _create_access_token(user.email)
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        max_age=settings.access_token_expire_minutes * 60,
-        samesite="lax",
-        secure=settings.cookie_secure,
+    refresh_raw = await issue_refresh_token(
+        db, user, user_agent=request.headers.get("user-agent"), ip=client_ip(request),
     )
-    return schemas.TokenResponse(
-        access_token=token,
-        token_type="bearer",
-        expires_in=settings.access_token_expire_minutes * 60,
+    tokens = schemas.TokenResponse(
+        access_token=create_mobile_access_token(user.email),
+        refresh_token=refresh_raw,
+        expires_in=access_token_expires_in_seconds(),
         role=user.role,
     )
+    await db.commit()
+    return tokens
+
+
+@router.post("/refresh", response_model=schemas.TokenResponse)
+async def api_refresh(request: Request, data: schemas.RefreshRequest, db: AsyncSession = Depends(get_db)):
+    result = await rotate_refresh_token(
+        db, data.refresh_token, user_agent=request.headers.get("user-agent"), ip=client_ip(request),
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=401, detail="Refresh-токен недействителен",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user, new_refresh = result
+    tokens = schemas.TokenResponse(
+        access_token=create_mobile_access_token(user.email),
+        refresh_token=new_refresh,
+        expires_in=access_token_expires_in_seconds(),
+        role=user.role,
+    )
+    await db.commit()
+    return tokens
 
 
 @router.post("/logout")
-async def api_logout(response: Response):
-    response.delete_cookie("access_token")
+async def api_logout(data: schemas.LogoutRequest, db: AsyncSession = Depends(get_db)):
+    """Отзывает переданный refresh-токен (идемпотентно)."""
+    if data.refresh_token:
+        await revoke_refresh_token(db, data.refresh_token)
+        await db.commit()
     return {"message": "Выход выполнен"}
