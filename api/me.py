@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 
 import models
 import schemas
+from config import settings
 from core.dependencies import get_db, get_current_user_api
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -115,6 +116,29 @@ async def get_active_booking(
         starts_at=booking.starts_at,
         ends_at=booking.ends_at,
     )
+
+
+@router.get("/transactions", response_model=list[schemas.TransactionResponse])
+async def get_my_transactions(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_current_user_api),
+):
+    """История баланса (ledger) пользователя — пополнения и списания."""
+    user = _require_user(current_user)
+    res = await db.execute(
+        select(models.BalanceTransaction)
+        .filter(models.BalanceTransaction.user_id == user.id)
+        .order_by(models.BalanceTransaction.created_at.desc(), models.BalanceTransaction.id.desc())
+        .limit(settings.history_page_size)
+    )
+    return [
+        schemas.TransactionResponse(
+            id=t.id, amount=t.amount, balance_after=t.balance_after,
+            kind=t.kind, reason=t.reason, created_at=t.created_at,
+        )
+        for t in res.scalars().all()
+    ]
 
 
 @router.get("/orders", response_model=list[schemas.OrderDetailResponse])

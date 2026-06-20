@@ -84,6 +84,21 @@ async def api_book_request(
     return schemas.ActionResponse(status="success", message=result.message)
 
 
+@router.post("/bookings/{booking_id}/cancel", response_model=schemas.ActionResponse)
+async def api_cancel_booking_request(
+    booking_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_current_user_api),
+):
+    """Игрок отменяет свою pending-заявку (депозит возвращается)."""
+    user = _require_user(current_user)
+    try:
+        result = await BookingService(db).cancel_request(user_id=user.id, booking_id=booking_id)
+    except ServiceError as error:
+        raise _as_http(error)
+    return schemas.ActionResponse(status="success", message=result.message)
+
+
 @router.post("/free_seat/{pc_id}", response_model=schemas.ActionResponse)
 async def api_free_seat(
     pc_id: int,

@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 import models
 from config import settings
 from core.services.booking_service import BookingService
-from core.services.exceptions import ConflictError, ValidationError
+from core.services.exceptions import ConflictError, ForbiddenError, ValidationError
 
 
 class BookingServiceMoneyTests(unittest.IsolatedAsyncioTestCase):
@@ -134,6 +134,36 @@ class BookingServiceMoneyTests(unittest.IsolatedAsyncioTestCase):
         async with self.Session() as db:
             booking = (await db.execute(select(models.Booking).filter(models.Booking.id == r.booking_id))).scalars().first()
             self.assertEqual(booking.status, "rejected")
+
+    # --- cancel_request (игрок отменяет свою заявку) ---
+    async def test_cancel_own_pending_refunds_deposit(self):
+        async with self.Session() as db:
+            r = await BookingService(db).create_booking_request(user_id=self.p1_id, pc_id=self.pc_id)
+        self.assertEqual(await self._balance(self.p1_id), 4000)
+        async with self.Session() as db:
+            result = await BookingService(db).cancel_request(user_id=self.p1_id, booking_id=r.booking_id)
+        self.assertEqual(result.refunded, 1000)
+        self.assertEqual(await self._balance(self.p1_id), 5000)   # депозит возвращён
+        async with self.Session() as db:
+            booking = (await db.execute(select(models.Booking).filter(models.Booking.id == r.booking_id))).scalars().first()
+            self.assertEqual(booking.status, "cancelled")
+
+    async def test_cancel_other_users_request_forbidden(self):
+        async with self.Session() as db:
+            r = await BookingService(db).create_booking_request(user_id=self.p1_id, pc_id=self.pc_id)
+        async with self.Session() as db:
+            with self.assertRaises(ForbiddenError):
+                await BookingService(db).cancel_request(user_id=self.p2_id, booking_id=r.booking_id)
+
+    async def test_cancel_confirmed_request_conflict(self):
+        async with self.Session() as db:
+            r = await BookingService(db).create_booking_request(user_id=self.p1_id, pc_id=self.pc_id)
+        async with self.Session() as db:
+            owner = await self._owner(db)
+            await BookingService(db).confirm_request(actor=owner, booking_id=r.booking_id)
+        async with self.Session() as db:
+            with self.assertRaises(ConflictError):   # уже active — отменить нельзя
+                await BookingService(db).cancel_request(user_id=self.p1_id, booking_id=r.booking_id)
 
     async def test_recent_request_not_expired(self):
         async with self.Session() as db:

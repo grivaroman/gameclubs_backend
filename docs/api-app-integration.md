@@ -95,6 +95,15 @@ HTTP-кодом. Часть «действий» возвращает `{"status"
 | GET | `/api/me/bookings` | `BookingResponse[]` (последние 50) |
 | GET | `/api/me/active_booking` | `BookingResponse` или `null` |
 | GET | `/api/me/orders` | `OrderDetailResponse[]` (последние 50) |
+| GET | `/api/me/transactions` | `TransactionResponse[]` — история баланса (ledger) |
+
+```json
+// TransactionResponse — amount < 0 списание, > 0 пополнение
+{ "id": 9, "amount": -500, "balance_after": 9500, "kind": "booking_debit",
+  "reason": "Бронирование ПК", "created_at": "2026-06-20T10:00:00" }
+```
+`kind`: `kaspi_test_top_up`, `admin_top_up`, `booking_debit`, `order_debit`,
+`booking_deposit`, `booking_refund`.
 
 ```json
 // GET /api/me
@@ -145,6 +154,7 @@ HTTP-кодом. Часть «действий» возвращает `{"status"
 | Метод | Путь | Тело | Что делает |
 |---|---|---|---|
 | POST | `/api/book_request/{pc_id}` | `{ starts_at?, ends_at? }` | **Заявка на бронь** (аггрегатор) |
+| POST | `/api/bookings/{booking_id}/cancel` | — | Отменить свою `pending`-заявку (депозит возвращается) |
 | POST | `/api/book_seat/{pc_id}` | `{ package_id }` | Мгновенная платная бронь по тарифу |
 | POST | `/api/free_seat/{pc_id}` | — | Освободить место |
 | POST | `/api/buy_product/{product_id}` | — | Купить товар (списывает цену) |
@@ -180,7 +190,9 @@ HTTP-кодом. Часть «действий» возвращает `{"status"
   `pending` → владелец **confirm** → `active` (ПК занимается)
   `pending` → владелец **reject** → `rejected` (депозит возвращён)
   `pending` → не обработана > TTL (24ч) → авто-`rejected` (депозит возвращён)
+  `pending` → игрок **cancel** (`/api/bookings/{id}/cancel`) → `cancelled` (депозит возвращён)
 - Повторная заявка тем же игроком на тот же ПК (пока есть `pending`) → `409`.
+- Отменить можно только **свою** заявку и только пока она `pending` (иначе 403/409).
 
 ### 6.2 Мгновенная бронь (`/api/book_seat/{pc_id}`) — Senet-style
 - Списывает `package.price` сразу, **занимает ПК** на `duration_minutes`,

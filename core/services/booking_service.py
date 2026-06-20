@@ -375,6 +375,54 @@ class BookingService:
             message=f"Заявка на ПК #{pc.number} отклонена.",
         )
 
+    async def cancel_request(self, *, user_id: int, booking_id: int) -> BookingModerationResult:
+        """Игрок отменяет СВОЮ pending-заявку. Депозит (если был) возвращается."""
+        res = await self.db.execute(
+            select(models.Booking).filter(models.Booking.id == booking_id).with_for_update()
+        )
+        booking = res.scalars().first()
+        if not booking:
+            raise NotFoundError("Заявка не найдена")
+        if booking.user_id != user_id:
+            raise ForbiddenError("Это не ваша заявка")
+        if booking.status != "pending":
+            raise ConflictError("Заявку уже нельзя отменить")
+
+        refunded = 0
+        if booking.amount_paid and booking.amount_paid > 0:
+            res_user = await self.db.execute(
+                select(models.User).filter(models.User.id == user_id).with_for_update()
+            )
+            target = res_user.scalars().first()
+            if target:
+                await credit_user_balance(
+                    self.db,
+                    user=target,
+                    amount=booking.amount_paid,
+                    kind="booking_refund",
+                    booking_id=booking.id,
+                    reason="Возврат депозита: заявка отменена игроком",
+                )
+                refunded = booking.amount_paid
+
+        res_pc = await self.db.execute(
+            select(models.Computer).filter(models.Computer.id == booking.computer_id)
+        )
+        pc = res_pc.scalars().first()
+        booking.status = "cancelled"
+        if pc:
+            self.db.add(models.Notification(
+                kind="booking",
+                club_id=pc.club_id,
+                title="Заявка отменена клиентом",
+                message=f"Клиент отменил заявку на ПК #{pc.number}{' (депозит возвращён)' if refunded else ''}.",
+            ))
+        await self.db.commit()
+        return BookingModerationResult(
+            booking_id=booking.id, pc_number=pc.number if pc else 0, status="cancelled",
+            refunded=refunded, message="Заявка отменена.",
+        )
+
     async def expire_stale_requests(self, *, limit: int = 100) -> int:
         """M2: авто-отклоняет pending-заявки старше TTL и возвращает депозиты.
 

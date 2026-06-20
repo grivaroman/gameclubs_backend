@@ -158,6 +158,14 @@ class NotificationResponse(BaseModel):
     is_read: bool
     created_at: datetime
 
+class TransactionResponse(BaseModel):
+    id: int
+    amount: int            # < 0 — списание, > 0 — пополнение
+    balance_after: int
+    kind: str
+    reason: Optional[str] = None
+    created_at: datetime
+
 class ReviewCreate(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     comment: Optional[str] = Field(None, max_length=1000)
