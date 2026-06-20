@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 import models
-from api.auth import _create_access_token
 from api.me import router as me_router
+from core.api_tokens import create_mobile_access_token
 from core.dependencies import get_db as core_get_db
 
 
@@ -55,7 +55,7 @@ class MeTransactionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.get("/api/me/transactions").status_code, 401)
 
     async def test_transactions_returns_only_own_ledger(self):
-        headers = {"Authorization": f"Bearer {_create_access_token(self.email)}"}
+        headers = {"Authorization": f"Bearer {create_mobile_access_token(self.email)}"}
         r = self.client.get("/api/me/transactions", headers=headers)
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
