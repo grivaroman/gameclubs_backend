@@ -112,11 +112,12 @@ class UserMeResponse(BaseModel):
     role: str
 
 class ComputerResponse(BaseModel):
+    # Публичная витрина ПК. НЕ раскрываем current_user_id (кто играет) — это PII;
+    # отдаём только статус и время освобождения для UX «занят до …».
     id: int
     number: int
     category: str
     status: str
-    current_user_id: Optional[int] = None
     end_time: Optional[datetime] = None
     position_x: int = 0
     position_y: int = 0
