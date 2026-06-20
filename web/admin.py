@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
 import models
+from config import settings
 from core.dependencies import get_current_user, get_db, templates
 from core.finance import credit_user_balance
 from core.fraud import evaluate_admin_pc_override, evaluate_admin_top_up
@@ -93,6 +94,67 @@ def build_finance_summary(orders, bookings, expenses):
         "expense_total": expense_total,
         "profit": revenue_total - expense_total,
         "labels": [day.strftime("%d.%m") for day in days],
+        "income_series": [income_by_day[day] for day in days],
+        "expense_series": [expense_by_day[day] for day in days],
+    }
+
+
+async def compute_finance(db: AsyncSession, club_ids: list[int]) -> dict:
+    """Финансовая сводка БЕЗ загрузки всех строк (R2): гранд-тоталы через SUM,
+    7-дневный график — по ограниченному окну. Память не растёт с историей."""
+    days = [(datetime.utcnow().date() - timedelta(days=offset)) for offset in range(6, -1, -1)]
+    labels = [day.strftime("%d.%m") for day in days]
+    if not club_ids:
+        return {
+            "order_revenue": 0, "booking_revenue": 0, "revenue_total": 0,
+            "expense_total": 0, "profit": 0, "labels": labels,
+            "income_series": [0] * 7, "expense_series": [0] * 7,
+        }
+
+    order_revenue = int((await db.execute(
+        select(func.coalesce(func.sum(models.Order.amount_paid), 0))
+        .join(models.Product).filter(models.Product.club_id.in_(club_ids))
+    )).scalar() or 0)
+    booking_revenue = int((await db.execute(
+        select(func.coalesce(func.sum(models.Booking.amount_paid), 0))
+        .join(models.Computer).filter(models.Computer.club_id.in_(club_ids))
+    )).scalar() or 0)
+    expense_total = int((await db.execute(
+        select(func.coalesce(func.sum(models.Expense.amount), 0))
+        .filter(models.Expense.club_id.in_(club_ids))
+    )).scalar() or 0)
+    revenue_total = order_revenue + booking_revenue
+
+    window_start = datetime.utcnow() - timedelta(days=7)
+    income_by_day = {day: 0 for day in days}
+    expense_by_day = {day: 0 for day in days}
+
+    res_o = await db.execute(
+        select(models.Order).join(models.Product)
+        .filter(models.Product.club_id.in_(club_ids), models.Order.created_at >= window_start)
+    )
+    for order in res_o.scalars().all():
+        if order.created_at and order.created_at.date() in income_by_day:
+            income_by_day[order.created_at.date()] += amount(order.amount_paid)
+    res_b = await db.execute(
+        select(models.Booking).join(models.Computer)
+        .filter(models.Computer.club_id.in_(club_ids), models.Booking.starts_at >= window_start)
+    )
+    for booking in res_b.scalars().all():
+        if booking.starts_at and booking.starts_at.date() in income_by_day:
+            income_by_day[booking.starts_at.date()] += amount(booking.amount_paid)
+    res_e = await db.execute(
+        select(models.Expense)
+        .filter(models.Expense.club_id.in_(club_ids), models.Expense.spent_at >= window_start)
+    )
+    for expense in res_e.scalars().all():
+        if expense.spent_at and expense.spent_at.date() in expense_by_day:
+            expense_by_day[expense.spent_at.date()] += amount(expense.amount)
+
+    return {
+        "order_revenue": order_revenue, "booking_revenue": booking_revenue,
+        "revenue_total": revenue_total, "expense_total": expense_total,
+        "profit": revenue_total - expense_total, "labels": labels,
         "income_series": [income_by_day[day] for day in days],
         "expense_series": [expense_by_day[day] for day in days],
     }
@@ -196,6 +258,7 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
     all_games = res_games.scalars().all()
 
     orders = []
+    orders_count = 0
     computers = []
     products = []
     bookings = []
@@ -205,14 +268,22 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
     integrations = {}
     fraud_signals = []
     if club_ids:
+        # R2: для таблицы показываем последние N, иначе при больших клубах грузим
+        # всю историю в память. Полный счётчик — отдельным COUNT.
         res_orders = await db.execute(
             select(models.Order)
             .options(selectinload(models.Order.user), selectinload(models.Order.product))
             .join(models.Product)
             .filter(models.Product.club_id.in_(club_ids))
             .order_by(models.Order.created_at.desc())
+            .limit(settings.history_page_size)
         )
         orders = res_orders.scalars().all()
+        orders_count = (await db.execute(
+            select(func.count(models.Order.id))
+            .join(models.Product)
+            .filter(models.Product.club_id.in_(club_ids))
+        )).scalar() or 0
 
         res_computers = await db.execute(
             select(models.Computer)
@@ -243,6 +314,7 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
             .join(models.Computer)
             .filter(models.Computer.club_id.in_(club_ids))
             .order_by(models.Booking.starts_at.desc())
+            .limit(settings.history_page_size)
         )
         bookings = res_bookings.scalars().all()
 
@@ -288,7 +360,7 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
     analytics = {
         "clubs": len(clubs),
         "products": len(products),
-        "orders": len(orders),
+        "orders": orders_count,
         "total_pcs": total_pcs,
         "free_pcs": free_pcs,
         "busy_pcs": busy_pcs,
@@ -296,7 +368,7 @@ async def admin_page(request: Request, db: AsyncSession = Depends(get_db)):
         "occupancy": round((busy_pcs + reserved_pcs) / total_pcs * 100) if total_pcs else 0,
         "unread_notifications": len([n for n in notifications if not n.is_read]),
     }
-    finance = build_finance_summary(orders, bookings, expenses)
+    finance = await compute_finance(db, club_ids)
 
     return templates.TemplateResponse("admin.html", {
         "request": request,
