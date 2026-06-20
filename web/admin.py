@@ -22,6 +22,7 @@ from core.integrations import check_integration, touch_integration_status, valid
 from core.roles import CLUB_ADMIN_ROLES, ROLE_PENDING_OWNER, ROLE_SUPERADMIN, STAFF_ROLES
 from core.services.booking_service import BookingService
 from core.services.exceptions import ServiceError
+from core.services.order_service import OrderService
 from core.tenancy import can_manage_club, can_manage_order, can_manage_pc, manageable_club_ids
 from core.ws import issue_pc_token
 
@@ -601,6 +602,18 @@ async def complete_order(order_id: int, request: Request, db: AsyncSession = Dep
     return RedirectResponse(url="/admin", status_code=303)
 
 
+@router.post("/cancel_order/{order_id}")
+async def cancel_order_route(order_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    current_user = await get_current_user(request, db)
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    try:
+        await OrderService(db).cancel_order(actor=current_user, order_id=order_id)
+    except ServiceError as error:
+        return HTMLResponse(error.message, status_code=error.status_code)
+    return RedirectResponse(url="/admin", status_code=303)
+
+
 @router.post("/bookings/{booking_id}/confirm")
 async def confirm_booking(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     current_user = await get_current_user(request, db)
@@ -779,6 +792,15 @@ async def admin_ai_chat(request: Request, payload: dict = Body(...), db: AsyncSe
         "temperature": 0.3,
         "max_tokens": 700,
     }
+    # R1: синхронный HTTP к Groq выполняем в threadpool, чтобы НЕ блокировать
+    # event loop (иначе один медленный запрос морозит все конкурентные запросы).
+    answer, status_code = await run_in_threadpool(_groq_completion, api_key, body)
+    return JSONResponse({"answer": answer}, status_code=status_code)
+
+
+def _groq_completion(api_key: str, body: dict) -> tuple[str, int]:
+    """Синхронный вызов Groq Chat Completions. Возвращает (текст_ответа|ошибка, http_status).
+    Вызывать только из threadpool — внутри блокирующий urllib."""
     groq_request = urllib.request.Request(
         "https://api.groq.com/openai/v1/chat/completions",
         data=json.dumps(body).encode("utf-8"),
@@ -789,9 +811,7 @@ async def admin_ai_chat(request: Request, payload: dict = Body(...), db: AsyncSe
         with urllib.request.urlopen(groq_request, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        return JSONResponse({"answer": exc.read().decode("utf-8", errors="ignore")}, status_code=502)
+        return exc.read().decode("utf-8", errors="ignore"), 502
     except urllib.error.URLError as exc:
-        return JSONResponse({"answer": f"Не удалось подключиться к Groq: {exc.reason}"}, status_code=502)
-
-    answer = data.get("choices", [{}])[0].get("message", {}).get("content", "Ответ не получен.")
-    return JSONResponse({"answer": answer})
+        return f"Не удалось подключиться к Groq: {exc.reason}", 502
+    return data.get("choices", [{}])[0].get("message", {}).get("content", "Ответ не получен."), 200
