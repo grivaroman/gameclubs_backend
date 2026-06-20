@@ -2,12 +2,25 @@ from urllib.parse import urlparse
 
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
+from passlib.context import CryptContext
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import settings
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 MIN_PASSWORD_LENGTH = 10
+
+# Единый bcrypt-контекст для всего приложения — не создавать CryptContext
+# по месту (web/auth, api/auth, main раньше дублировали его).
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(plain: str) -> str:
+    return pwd_context.hash(plain)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
 
 
 def split_csv(value: str | None) -> list[str]:

@@ -4,12 +4,9 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from schemas import ClubResponse, ClubCreate, ClubListResponse, GameResponse, PackageResponse, ComputerResponse, ProductResponse
 import models
+from core.dependencies import get_db
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
-
-async def get_db():
-    async with models.SessionLocal() as db:
-        yield db
 
 def club_to_response(club: models.Club) -> ClubResponse:
     """Преобразовать модель клуба в response схему"""

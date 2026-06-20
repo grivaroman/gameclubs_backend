@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -15,17 +14,12 @@ from core.api_tokens import (
     revoke_refresh_token,
     rotate_refresh_token,
 )
-from core.dependencies import get_current_user_api
+from core.dependencies import get_current_user_api, get_db
 from core.ratelimit import LOGIN_LIMIT, REGISTER_LIMIT, client_ip, enforce_rate_limit
 from core.roles import ROLE_USER
+from core.security import pwd_context
 
 router = APIRouter(tags=["auth"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-async def get_db():
-    async with models.SessionLocal() as db:
-        yield db
 
 
 @router.post("/register")

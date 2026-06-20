@@ -5,10 +5,9 @@ from api import router as api_router
 from config import settings
 from core.observability import get_logger, setup_logging, setup_sentry
 from core.roles import ROLE_SUPERADMIN
-from core.security import CSRFMiddleware, SecurityHeadersMiddleware, split_csv
+from core.security import CSRFMiddleware, SecurityHeadersMiddleware, pwd_context, split_csv
 from core.ws import authenticate_pc_websocket, manager, user_manager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from passlib.context import CryptContext
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text, update
 from sqlalchemy.future import select
@@ -22,7 +21,6 @@ setup_sentry(settings.sentry_dsn, environment=settings.environment, release=sett
 logger = get_logger("gameclubs")
 
 app = FastAPI(title="CyberBooking System")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)

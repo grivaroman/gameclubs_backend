@@ -2,7 +2,6 @@ from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timedelta, timezone
 
@@ -11,10 +10,9 @@ from config import settings
 from core.dependencies import templates, get_db
 from core.ratelimit import LOGIN_LIMIT, OWNER_REGISTER_LIMIT, REGISTER_LIMIT, enforce_rate_limit
 from core.roles import ROLE_ADMIN, ROLE_OWNER, ROLE_PENDING_OWNER, ROLE_SUPERADMIN, ROLE_USER
-from core.security import MIN_PASSWORD_LENGTH
+from core.security import MIN_PASSWORD_LENGTH, pwd_context
 
 router = APIRouter(tags=["web_auth"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(email: str) -> str:
