@@ -154,6 +154,12 @@ async def cleanup_expired_sessions_once() -> int:
         if expired_pcs:
             await db.commit()
             logger.info("cleanup_expired_pcs", extra={"count": len(expired_pcs)})
+
+        # M2: протухшие pending-заявки → авто-отклонение с возвратом депозита.
+        from core.services.booking_service import BookingService
+        expired_requests = await BookingService(db).expire_stale_requests()
+        if expired_requests:
+            logger.info("cleanup_expired_requests", extra={"count": expired_requests})
         return len(expired_pcs)
 
 

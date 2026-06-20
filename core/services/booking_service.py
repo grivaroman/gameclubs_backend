@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 import models
+from config import settings
 from core.finance import credit_user_balance, debit_user_balance
 from core.fraud import evaluate_admin_pc_override, evaluate_booking_success, evaluate_failed_payment
 from core.services.access import user_can_manage_club
@@ -205,6 +206,20 @@ class BookingService:
         if not club:
             raise ConflictError("Клуб сейчас недоступен для бронирования")
 
+        # M3: валидируем окно времени, заданное клиентом, иначе ПК можно
+        # «забронировать» в прошлое или на годы вперёд (и он залипнет в busy).
+        now = datetime.utcnow()
+        starts = starts_at or now
+        if starts < now - timedelta(minutes=5):   # допускаем небольшой clock skew
+            raise ValidationError("Время начала не может быть в прошлом")
+        if ends_at is not None:
+            if ends_at <= starts:
+                raise ValidationError("Время окончания должно быть позже начала")
+            duration_minutes = (ends_at - starts).total_seconds() / 60
+            if duration_minutes > settings.max_booking_duration_minutes:
+                max_hours = settings.max_booking_duration_minutes // 60
+                raise ValidationError(f"Бронь не может быть длиннее {max_hours} ч")
+
         res_dup = await self.db.execute(
             select(models.Booking.id).filter(
                 models.Booking.user_id == user.id,
@@ -225,7 +240,7 @@ class BookingService:
             computer_id=pc.id,
             amount_paid=0,
             status="pending",
-            starts_at=starts_at or datetime.utcnow(),
+            starts_at=starts,
             ends_at=ends_at,
         )
         self.db.add(booking)
@@ -281,12 +296,22 @@ class BookingService:
             raise ForbiddenError("Нет доступа к этой заявке")
         if booking.status != "pending":
             raise ConflictError("Заявка уже обработана")
+        # M1: нельзя подтвердить заявку на занятый ПК — иначе две 'active'-брони на одно
+        # место (овербукинг). ПК под FOR UPDATE, занимаем атомарно.
+        if pc.status != "free":
+            raise ConflictError("ПК сейчас занят — освободите его перед подтверждением заявки")
 
         booking.status = "active"
-        if pc.status == "free":
-            pc.status = "busy"
-            pc.current_user_id = booking.user_id
-            pc.end_time = booking.ends_at
+        # M3: гарантируем конечный end_time. Если клиент не задал ends_at (или он в прошлом),
+        # ставим дефолтную длительность — иначе ПК залипнет в 'busy' навсегда
+        # (cleanup освобождает только по end_time <= now, а NULL под это не попадает).
+        end_time = booking.ends_at
+        if end_time is None or end_time <= datetime.utcnow():
+            end_time = datetime.utcnow() + timedelta(minutes=settings.default_booking_session_minutes)
+            booking.ends_at = end_time
+        pc.status = "busy"
+        pc.current_user_id = booking.user_id
+        pc.end_time = end_time
 
         self.db.add(models.Notification(
             kind="booking",
@@ -349,3 +374,40 @@ class BookingService:
             booking_id=booking.id, pc_number=pc.number, status="rejected", refunded=refunded,
             message=f"Заявка на ПК #{pc.number} отклонена.",
         )
+
+    async def expire_stale_requests(self, *, limit: int = 100) -> int:
+        """M2: авто-отклоняет pending-заявки старше TTL и возвращает депозиты.
+
+        Без этого списанный депозит висит бесконечно, если владелец не реагирует.
+        Вызывается из фоновой чистки. Возвращает число протухших заявок.
+        Заявки берём с FOR UPDATE skip_locked, чтобы не гоняться с confirm/reject.
+        """
+        cutoff = datetime.utcnow() - timedelta(minutes=settings.booking_request_ttl_minutes)
+        res = await self.db.execute(
+            select(models.Booking)
+            .filter(models.Booking.status == "pending", models.Booking.starts_at < cutoff)
+            .with_for_update(skip_locked=True)
+            .limit(limit)
+        )
+        stale = res.scalars().all()
+        count = 0
+        for booking in stale:
+            if booking.amount_paid and booking.amount_paid > 0:
+                res_user = await self.db.execute(
+                    select(models.User).filter(models.User.id == booking.user_id).with_for_update()
+                )
+                target = res_user.scalars().first()
+                if target:
+                    await credit_user_balance(
+                        self.db,
+                        user=target,
+                        amount=booking.amount_paid,
+                        kind="booking_refund",
+                        booking_id=booking.id,
+                        reason="Возврат депозита: заявка истекла без ответа",
+                    )
+            booking.status = "rejected"
+            count += 1
+        if count:
+            await self.db.commit()
+        return count

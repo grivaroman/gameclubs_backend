@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     kaspi_test_max_amount: int = 200_000
     max_review_comment_length: int = 1000
     max_booking_duration_minutes: int = 1440  # 24 часа
+    # Если у подтверждённой заявки не задан ends_at — на сколько занять ПК по умолчанию,
+    # чтобы он не залип в 'busy' навсегда (cleanup освобождает только по end_time <= now).
+    default_booking_session_minutes: int = 60
+    # Сколько pending-заявка живёт до авто-отклонения (с возвратом депозита).
+    # Иначе списанный депозит висит бесконечно, если владелец не реагирует.
+    booking_request_ttl_minutes: int = 1440  # 24 часа
     history_page_size: int = 50
     notifications_page_size: int = 100
 
