@@ -133,7 +133,7 @@ HTTP-кодом. Часть «действий» возвращает `{"status"
 // ClubResponse (ключевое для бронирования)
 {
   "id": 1, "name": "Cyber Arena", "address": "ул. Абая 10", "city": "Almaty",
-  "booking_mode": "prepaid", "booking_deposit": 1000,
+  "booking_mode": "prepaid", "booking_deposit": 1000, "cancellation_fee_percent": 30,
   "games":    [ { "id": 3, "name": "CS2" } ],
   "packages": [ { "id": 5, "name": "1 час", "price": 500, "duration_minutes": 60,
                   "paid_minutes": 60, "bonus_minutes": 0, "pc_category": "Standard" } ]
@@ -190,9 +190,15 @@ HTTP-кодом. Часть «действий» возвращает `{"status"
   `pending` → владелец **confirm** → `active` (ПК занимается)
   `pending` → владелец **reject** → `rejected` (депозит возвращён)
   `pending` → не обработана > TTL (24ч) → авто-`rejected` (депозит возвращён)
-  `pending` → игрок **cancel** (`/api/bookings/{id}/cancel`) → `cancelled` (депозит возвращён)
+  `pending` → игрок **cancel** (`/api/bookings/{id}/cancel`) → `cancelled` (**частичный** возврат)
 - Повторная заявка тем же игроком на тот же ПК (пока есть `pending`) → `409`.
 - Отменить можно только **свою** заявку и только пока она `pending` (иначе 403/409).
+
+**Задаток при отмене игроком.** Клуб задаёт `cancellation_fee_percent` (0–100).
+При отмене **игроком** удерживается `deposit×percent/100` (округление вниз, остаётся
+у мерчанта), возвращается остаток. При **отклонении владельцем** или **протухании**
+заявки — возврат **полный** (не вина клиента). Ответ на отмену сообщает суммы:
+`{"status":"success","message":"Заявка отменена. Возвращено 700₸, задаток 300₸ удержан."}`
 
 ### 6.2 Мгновенная бронь (`/api/book_seat/{pc_id}`) — Senet-style
 - Списывает `package.price` сразу, **занимает ПК** на `duration_minutes`,

@@ -66,6 +66,7 @@ class ClubListResponse(BaseModel):
     description: Optional[str] = None
     booking_mode: str = "request"
     booking_deposit: int = 0
+    cancellation_fee_percent: int = 0
 
 class ClubResponse(BaseModel) :
     id: int
@@ -79,6 +80,7 @@ class ClubResponse(BaseModel) :
     amenities: Optional[str] = None
     booking_mode: str = "request"
     booking_deposit: int = 0
+    cancellation_fee_percent: int = 0
     games: List[GameResponse] = Field(default_factory=list)
     packages: List[PackageResponse] = Field(default_factory=list)
 

@@ -100,6 +100,10 @@ class Club(Base):
             "booking_deposit IS NULL OR booking_deposit >= 0",
             name="ck_clubs_booking_deposit_non_negative",
         ),
+        CheckConstraint(
+            "cancellation_fee_percent IS NULL OR (cancellation_fee_percent >= 0 AND cancellation_fee_percent <= 100)",
+            name="ck_clubs_cancellation_fee_percent_range",
+        ),
         Index("ix_clubs_owner_id", "owner_id"),
         Index("ix_clubs_status", "status"),
     )
@@ -114,9 +118,12 @@ class Club(Base):
     description = Column(Text)
     amenities = Column(Text)
     # Как клуб принимает брони: 'request' — бесплатная заявка с подтверждением владельцем,
-    # 'prepaid' — списывается депозит booking_deposit при оформлении (возвращается при отклонении).
+    # 'prepaid' — списывается депозит booking_deposit при оформлении.
     booking_mode = Column(String, default="request")
     booking_deposit = Column(Integer, default=0)
+    # Невозвратный задаток при отмене брони ИГРОКОМ — % от предоплаты, остаётся у мерчанта.
+    # При отклонении владельцем / протухании заявки возвращается всё (не вина клиента).
+    cancellation_fee_percent = Column(Integer, default=0)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(String, default="pending")
     moderation_comment = Column(Text, nullable=True)

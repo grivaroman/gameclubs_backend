@@ -22,6 +22,7 @@ def club_to_response(club: models.Club) -> ClubResponse:
         amenities=club.amenities,
         booking_mode=club.booking_mode or "request",
         booking_deposit=club.booking_deposit or 0,
+        cancellation_fee_percent=club.cancellation_fee_percent or 0,
         games=[GameResponse(id=g.id, name=g.name) for g in club.games],
         packages=[
             PackageResponse(
@@ -57,6 +58,7 @@ async def get_clubs(db: AsyncSession = Depends(get_db)):
             description=c.description,
             booking_mode=c.booking_mode or "request",
             booking_deposit=c.booking_deposit or 0,
+            cancellation_fee_percent=c.cancellation_fee_percent or 0,
         ) for c in clubs
     ]
 

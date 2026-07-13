@@ -148,6 +148,48 @@ class BookingServiceMoneyTests(unittest.IsolatedAsyncioTestCase):
             booking = (await db.execute(select(models.Booking).filter(models.Booking.id == r.booking_id))).scalars().first()
             self.assertEqual(booking.status, "cancelled")
 
+    async def _set_fee(self, percent):
+        async with self.Session() as db:
+            club = (await db.execute(select(models.Club).filter(models.Club.id == self.club_id))).scalars().first()
+            club.cancellation_fee_percent = percent
+            await db.commit()
+
+    async def test_cancel_with_fee_keeps_deposit_portion(self):
+        await self._set_fee(30)   # задаток 30%
+        async with self.Session() as db:
+            r = await BookingService(db).create_booking_request(user_id=self.p1_id, pc_id=self.pc_id)
+        self.assertEqual(await self._balance(self.p1_id), 4000)   # депозит 1000 списан
+        async with self.Session() as db:
+            result = await BookingService(db).cancel_request(user_id=self.p1_id, booking_id=r.booking_id)
+        self.assertEqual(result.refunded, 700)                    # 1000 − 30%
+        self.assertEqual(await self._balance(self.p1_id), 4700)   # вернули 700, задаток 300 удержан
+        async with self.Session() as db:
+            booking = (await db.execute(select(models.Booking).filter(models.Booking.id == r.booking_id))).scalars().first()
+            self.assertEqual(booking.status, "cancelled")
+            self.assertEqual(booking.amount_paid, 300)            # у мерчанта остаётся задаток
+
+    async def test_owner_reject_refunds_full_even_with_fee(self):
+        await self._set_fee(30)   # задаток НЕ применяется при отклонении владельцем
+        async with self.Session() as db:
+            r = await BookingService(db).create_booking_request(user_id=self.p1_id, pc_id=self.pc_id)
+        async with self.Session() as db:
+            owner = await self._owner(db)
+            result = await BookingService(db).reject_request(actor=owner, booking_id=r.booking_id)
+        self.assertEqual(result.refunded, 1000)                  # полный возврат
+        self.assertEqual(await self._balance(self.p1_id), 5000)
+
+    async def test_expire_refunds_full_even_with_fee(self):
+        await self._set_fee(30)   # задаток НЕ применяется при протухании
+        async with self.Session() as db:
+            r = await BookingService(db).create_booking_request(user_id=self.p1_id, pc_id=self.pc_id)
+        async with self.Session() as db:
+            booking = (await db.execute(select(models.Booking).filter(models.Booking.id == r.booking_id))).scalars().first()
+            booking.starts_at = datetime.utcnow() - timedelta(minutes=settings.booking_request_ttl_minutes + 60)
+            await db.commit()
+        async with self.Session() as db:
+            await BookingService(db).expire_stale_requests()
+        self.assertEqual(await self._balance(self.p1_id), 5000)   # полный возврат
+
     async def test_cancel_other_users_request_forbidden(self):
         async with self.Session() as db:
             r = await BookingService(db).create_booking_request(user_id=self.p1_id, pc_id=self.pc_id)

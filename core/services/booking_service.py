@@ -388,8 +388,26 @@ class BookingService:
         if booking.status != "pending":
             raise ConflictError("Заявку уже нельзя отменить")
 
+        res_pc = await self.db.execute(
+            select(models.Computer).filter(models.Computer.id == booking.computer_id)
+        )
+        pc = res_pc.scalars().first()
+
+        # Задаток при отмене ИГРОКОМ: % от предоплаты остаётся у мерчанта,
+        # возвращаем только остаток. (Отклонение владельцем / протухание — полный
+        # возврат, там своя логика в reject_request / expire_stale_requests.)
+        paid = booking.amount_paid or 0
+        fee_percent = 0
+        if pc:
+            res_club = await self.db.execute(
+                select(models.Club.cancellation_fee_percent).filter(models.Club.id == pc.club_id)
+            )
+            fee_percent = res_club.scalar() or 0
+        kept = (paid * fee_percent) // 100     # невозвратный задаток (округление вниз)
+        refund = paid - kept
+
         refunded = 0
-        if booking.amount_paid and booking.amount_paid > 0:
+        if refund > 0:
             res_user = await self.db.execute(
                 select(models.User).filter(models.User.id == user_id).with_for_update()
             )
@@ -398,29 +416,31 @@ class BookingService:
                 await credit_user_balance(
                     self.db,
                     user=target,
-                    amount=booking.amount_paid,
+                    amount=refund,
                     kind="booking_refund",
                     booking_id=booking.id,
-                    reason="Возврат депозита: заявка отменена игроком",
+                    reason=f"Возврат при отмене игроком (задаток {kept}₸ удержан)"
+                    if kept else "Возврат депозита: заявка отменена игроком",
                 )
-                refunded = booking.amount_paid
+                refunded = refund
 
-        res_pc = await self.db.execute(
-            select(models.Computer).filter(models.Computer.id == booking.computer_id)
-        )
-        pc = res_pc.scalars().first()
         booking.status = "cancelled"
+        booking.amount_paid = kept              # у брони остаётся только удержанный задаток
         if pc:
             self.db.add(models.Notification(
                 kind="booking",
                 club_id=pc.club_id,
                 title="Заявка отменена клиентом",
-                message=f"Клиент отменил заявку на ПК #{pc.number}{' (депозит возвращён)' if refunded else ''}.",
+                message=f"Клиент отменил заявку на ПК #{pc.number}"
+                        f"{f' (удержан задаток {kept}₸)' if kept else ''}.",
             ))
         await self.db.commit()
+        message = "Заявка отменена."
+        if kept:
+            message = f"Заявка отменена. Возвращено {refunded}₸, задаток {kept}₸ удержан."
         return BookingModerationResult(
             booking_id=booking.id, pc_number=pc.number if pc else 0, status="cancelled",
-            refunded=refunded, message="Заявка отменена.",
+            refunded=refunded, message=message,
         )
 
     async def expire_stale_requests(self, *, limit: int = 100) -> int:

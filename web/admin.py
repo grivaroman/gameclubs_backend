@@ -616,6 +616,37 @@ async def add_expense(
     return RedirectResponse(url="/admin#finance", status_code=303)
 
 
+@router.post("/clubs/{club_id}/booking_settings")
+async def save_booking_settings(
+    club_id: int,
+    request: Request,
+    booking_mode: str = Form(...),
+    booking_deposit: int = Form(0),
+    cancellation_fee_percent: int = Form(0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Владелец настраивает приём броней: режим, депозит и невозвратный задаток (%)."""
+    current_user = await get_current_user(request, db)
+    if not current_user or not await ensure_owner_club(db, current_user, club_id):
+        return HTMLResponse("Нет доступа к этому клубу", status_code=403)
+    if booking_mode not in ("request", "prepaid"):
+        return HTMLResponse("Неизвестный режим бронирования", status_code=400)
+    if booking_deposit < 0:
+        return HTMLResponse("Депозит не может быть отрицательным", status_code=400)
+    if cancellation_fee_percent < 0 or cancellation_fee_percent > 100:
+        return HTMLResponse("Задаток должен быть от 0 до 100 %", status_code=400)
+
+    res = await db.execute(select(models.Club).filter(models.Club.id == club_id))
+    club = res.scalars().first()
+    if not club:
+        return HTMLResponse("Клуб не найден", status_code=404)
+    club.booking_mode = booking_mode
+    club.booking_deposit = booking_deposit if booking_mode == "prepaid" else 0
+    club.cancellation_fee_percent = cancellation_fee_percent
+    await db.commit()
+    return RedirectResponse(url="/admin#clubs", status_code=303)
+
+
 @router.post("/import_products")
 async def import_products(
     request: Request,
